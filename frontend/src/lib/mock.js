@@ -383,15 +383,16 @@ export const storage = {
 
   getTheme() {
     try {
-      return localStorage.getItem('nq-theme') || 'system';
+      const t = localStorage.getItem('nq-theme');
+      return t === 'dark' ? 'dark' : 'light';
     } catch {
-      return 'system';
+      return 'light';
     }
   },
 
   setTheme(theme) {
     try {
-      localStorage.setItem('nq-theme', theme);
+      localStorage.setItem('nq-theme', theme === 'dark' ? 'dark' : 'light');
     } catch {}
   },
 };

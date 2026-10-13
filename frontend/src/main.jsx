@@ -9,62 +9,44 @@ import { mockApi, storage } from './lib/mock.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './index.css';
 
-// ───────────── Theme Context & Provider ─────────────
+// ───────────── Theme Context & Provider (Light & Dark Only) ─────────────
 export const ThemeContext = createContext({
-  theme: 'system',
+  theme: 'light',
   resolvedTheme: 'light',
   setTheme: () => {},
 });
 
 export function ThemeProvider({ children }) {
-  const [theme, setThemeState] = useState(() => storage.getTheme());
-  const [resolvedTheme, setResolvedTheme] = useState(() => {
-    if (typeof window === 'undefined') return 'light';
-    const isDark =
-      theme === 'dark' ||
-      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    return isDark ? 'dark' : 'light';
+  const [theme, setThemeState] = useState(() => {
+    const saved = storage.getTheme();
+    return saved === 'dark' ? 'dark' : 'light';
   });
 
   const applyTheme = useCallback((targetTheme) => {
-    const isDark =
-      targetTheme === 'dark' ||
-      (targetTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    const active = isDark ? 'dark' : 'light';
-
-    setResolvedTheme(active);
+    const active = targetTheme === 'dark' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', active);
     document.documentElement.style.colorScheme = active;
 
     const metas = document.querySelectorAll('meta[name="theme-color"]');
     metas.forEach((meta) => {
-      meta.setAttribute('content', isDark ? '#00111c' : '#0077b6');
+      meta.setAttribute('content', active === 'dark' ? '#00111c' : '#0077b6');
       meta.removeAttribute('media');
     });
   }, []);
 
   const setTheme = (nextTheme) => {
-    setThemeState(nextTheme);
-    storage.setTheme(nextTheme);
-    applyTheme(nextTheme);
+    const val = nextTheme === 'dark' ? 'dark' : 'light';
+    setThemeState(val);
+    storage.setTheme(val);
+    applyTheme(val);
   };
 
   useEffect(() => {
     applyTheme(theme);
-
-    const mql = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => {
-      if (storage.getTheme() === 'system') {
-        applyTheme('system');
-      }
-    };
-
-    mql.addEventListener('change', onChange);
-    return () => mql.removeEventListener('change', onChange);
   }, [theme, applyTheme]);
 
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, resolvedTheme: theme, setTheme }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -72,30 +54,27 @@ export function ThemeProvider({ children }) {
 
 export const useTheme = () => useContext(ThemeContext);
 
-// ───────────── Theme Toggle Component ─────────────
+// ───────────── Theme Toggle Component (Light / Dark only) ─────────────
 export function ThemeToggle({ className = '' }) {
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
+  const isDark = theme === 'dark';
 
-  const cycleTheme = () => {
-    if (theme === 'system') setTheme('light');
-    else if (theme === 'light') setTheme('dark');
-    else setTheme('system');
+  const toggleTheme = () => {
+    setTheme(isDark ? 'light' : 'dark');
   };
 
   return (
     <button
       type="button"
-      onClick={cycleTheme}
+      onClick={toggleTheme}
       className={`touch-target p-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] text-[var(--ink)] hover:border-[var(--brand)] transition-colors ${className}`}
-      title={`Theme: ${theme} (Click to change)`}
-      aria-label="Toggle theme light/dark/system"
+      title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+      aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
     >
-      {theme === 'system' ? (
-        <Laptop size={18} className="text-[var(--brand)]" />
-      ) : resolvedTheme === 'dark' ? (
-        <Moon size={18} className="text-[var(--brand)]" />
+      {isDark ? (
+        <Sun size={18} className="text-[var(--accent-2)]" />
       ) : (
-        <Sun size={18} className="text-[var(--brand)]" />
+        <Moon size={18} className="text-[var(--brand)]" />
       )}
     </button>
   );

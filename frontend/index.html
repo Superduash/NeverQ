@@ -26,8 +26,7 @@
         try {
           var root = document.documentElement;
           var stored = localStorage.getItem("nq-theme");
-          var theme = stored === "dark" || stored === "light" ? stored : "system";
-          var isDark = theme === "dark" || (theme === "system" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var isDark = stored === "dark";
           var active = isDark ? "dark" : "light";
           root.setAttribute("data-theme", active);
           root.style.colorScheme = active;
