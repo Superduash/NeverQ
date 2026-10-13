@@ -1,8 +1,8 @@
-import React from 'react';
+﻿import React from 'react';
 import { Outlet, useNavigate, Link } from 'react-router-dom';
 import { OfflineBanner } from './OfflineBanner.jsx';
 import { DemoClockBanner } from './DemoClockBanner.jsx';
-import { Logo } from '../../main.jsx';
+import { Logo } from '../../components/brand/Logo.jsx';
 import { ThemeToggle } from '../../lib/theme.jsx';
 import { SocketStatusIndicator } from './SocketStatusIndicator.jsx';
 import { LogOut } from 'lucide-react';
@@ -61,3 +61,4 @@ export function StaffLayout() {
     </div>
   );
 }
+

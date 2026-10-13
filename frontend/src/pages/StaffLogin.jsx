@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Shield, Eye, EyeOff, Building2, KeyRound, ArrowLeft, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { notify } from '../lib/notify.js';
 import { Button, Input } from '../components/ui/index.js';
-import { Logo } from '../main.jsx';
+import { Logo } from '../components/brand/Logo.jsx';
 
 export default function StaffLogin() {
   const navigate = useNavigate();
@@ -191,3 +191,4 @@ export default function StaffLogin() {
     </div>
   );
 }
+

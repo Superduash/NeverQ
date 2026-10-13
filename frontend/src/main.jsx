@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation } fro
 import { Toaster } from 'sonner';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Sun, Moon, ArrowLeft } from 'lucide-react';
-import { storage } from './lib/mock.js';
+import { storage } from './lib/storage.js'; // eslint-disable-line no-unused-vars
 import { api } from './lib/api.js';
 import { useLiveData, useSocketRoom, socketManager } from './lib/socket.js';
 import { CustomerLayout } from './components/layout/CustomerLayout.jsx';
@@ -27,38 +27,8 @@ export { api, useLiveData, useSocketRoom };
 import { ThemeProvider, ThemeToggle, useTheme, ThemeContext } from './lib/theme.jsx';
 export { ThemeProvider, ThemeToggle, useTheme, ThemeContext };
 
-// ───────────── Logo Placeholder ─────────────
-/* LOGO PLACEHOLDER — replace /public/logo.svg. Brand colours: light #0077b6→#00b4d8 gradient on #f4fbff; dark #22d3ee on #00111c. Square, works at 24px, transparent background. */
-export function Logo({ size = 28, showText = true, className = '' }) {
-  const [imgFailed, setImgFailed] = useState(false);
-
-  return (
-    <div className={`flex items-center gap-2.5 select-none ${className}`}>
-      {!imgFailed ? (
-        <img
-          src="/logo.svg"
-          alt="NeverQ"
-          width={size}
-          height={size}
-          onError={() => setImgFailed(true)}
-          className="rounded-lg object-contain"
-        />
-      ) : (
-        <div
-          style={{ width: size, height: size }}
-          className="rounded-lg border-2 border-dashed border-[var(--brand)] flex items-center justify-center font-bold text-xs text-[var(--brand)] bg-[var(--surface-2)]"
-        >
-          NQ
-        </div>
-      )}
-      {showText && (
-        <span className="font-heading font-extrabold text-lg tracking-tight bg-gradient-to-r from-[var(--brand)] to-[var(--brand-2)] bg-clip-text text-transparent">
-          NeverQ
-        </span>
-      )}
-    </div>
-  );
-}
+// ───────────── Logo (from brand component) ─────────────
+export { Logo } from './components/brand/Logo.jsx';
 
 // ───────────── Route Stubs ─────────────
 function RouteStub({ name, description }) {
@@ -165,10 +135,7 @@ function AppShell() {
 // ───────────── Root Bootstrap ─────────────
 const rootElement = document.getElementById('root');
 if (rootElement) {
-  if (!window.__neverq_root) {
-    window.__neverq_root = createRoot(rootElement);
-  }
-  window.__neverq_root.render(
+  createRoot(rootElement).render(
     <React.StrictMode>
       <ErrorBoundary>
         <ThemeProvider>

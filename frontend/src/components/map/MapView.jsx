@@ -6,7 +6,7 @@ import { createHospitalMarker, updateHospitalMarker } from './HospitalMarker.js'
 import { createUserMarker, updateUserMarker } from './UserMarker.js';
 import { setRouteLayer, removeRouteLayer } from './RouteLayer.js';
 import { MapControls } from './MapControls.jsx';
-import { DEMO_HOME } from '../../lib/mock.js';
+import { DEMO_HOME } from '../../lib/geo.js';
 
 /**
  * Universal MapView component for NeverQ.

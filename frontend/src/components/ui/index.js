@@ -24,3 +24,5 @@ export * from './CountdownText.jsx';
 export * from './RelativeTime.jsx';
 export * from './Table.jsx';
 export * from './InstallPrompt.jsx';
+export * from './WaitPill.jsx';
+export * from './DeptIcon.jsx';

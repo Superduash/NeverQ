@@ -1,10 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { notify } from './notify.js';
 
-export const WAIT_THRESHOLDS = {
-  good: 15,
-  bad: 40,
-};
+import { WAIT_THRESHOLDS } from './constants.js';
+export { WAIT_THRESHOLDS };
 
 export function waitColor(midMinutes) {
   if (midMinutes < WAIT_THRESHOLDS.good) return 'good';

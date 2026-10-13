@@ -2,9 +2,9 @@
 // In-memory implementation of queues, counters, ETA simulation with learning (K=3),
 // priority credits, arrive-by deadlines, sweep, and localStorage persistence.
 
-import { haversine, estimateTravel } from '../mock.js';
+import { haversine, estimateTravel } from '../geo.js';
 
-const STORAGE_KEY = 'nq-mock-db';
+const STORAGE_KEY = 'nq-mock-db-v2';
 
 // ───────────── Seed Data ─────────────
 const SEED_ORGS = [
@@ -189,113 +189,9 @@ const SEED_ORGS = [
   },
 ];
 
-// Seed some initial patients to show realistic queues on startup
-const INITIAL_TICKETS = [
-  {
-    id: 't-seed-1',
-    orgId: 'harbour',
-    deptId: 'eye',
-    token: 'h-eye-101',
-    label: 'E-008',
-    name: 'Kavitha R.',
-    phone: '9876543210',
-    deviceId: 'dev-seed-1',
-    priority: 'senior',
-    urgent: false,
-    urgentReason: null,
-    status: 'waiting',
-    arrived: true,
-    lateCount: 0,
-    joinedAt: Date.now() - 40 * 60 * 1000,
-    sortKey: Date.now() - 60 * 60 * 1000, // 20m priority credit
-    calledAt: null,
-    startedAt: null,
-    doneAt: null,
-    arriveDeadline: null,
-    firstEta: { low: 18, mid: 22, high: 26 },
-    lastEta: { low: 18, mid: 22, high: 26 },
-    changes: [],
-    simulated: true,
-  },
-  {
-    id: 't-seed-2',
-    orgId: 'harbour',
-    deptId: 'eye',
-    token: 'h-eye-102',
-    label: 'E-009',
-    name: 'Muthu K.',
-    phone: '9876543211',
-    deviceId: 'dev-seed-2',
-    priority: 'none',
-    urgent: false,
-    urgentReason: null,
-    status: 'waiting',
-    arrived: false,
-    lateCount: 0,
-    joinedAt: Date.now() - 10 * 60 * 1000,
-    sortKey: Date.now() - 10 * 60 * 1000,
-    calledAt: null,
-    startedAt: null,
-    doneAt: null,
-    arriveDeadline: Date.now() + 15 * 60 * 1000,
-    firstEta: { low: 40, mid: 48, high: 56 },
-    lastEta: { low: 40, mid: 48, high: 56 },
-    changes: [],
-    simulated: true,
-  },
-  {
-    id: 't-seed-3',
-    orgId: 'lakeside',
-    deptId: 'eye',
-    token: 'l-eye-201',
-    label: 'E-017',
-    name: 'Aravind S.',
-    phone: '9876543212',
-    deviceId: 'dev-seed-3',
-    priority: 'none',
-    urgent: false,
-    urgentReason: null,
-    status: 'waiting',
-    arrived: true,
-    lateCount: 0,
-    joinedAt: Date.now() - 15 * 60 * 1000,
-    sortKey: Date.now() - 15 * 60 * 1000,
-    calledAt: null,
-    startedAt: null,
-    doneAt: null,
-    arriveDeadline: null,
-    firstEta: { low: 6, mid: 9, high: 12 },
-    lastEta: { low: 6, mid: 9, high: 12 },
-    changes: [],
-    simulated: true,
-  },
-  {
-    id: 't-seed-4',
-    orgId: 'harbour',
-    deptId: 'gen',
-    token: 'h-gen-301',
-    label: 'G-012',
-    name: 'Suresh V.',
-    phone: '9876543213',
-    deviceId: 'dev-seed-4',
-    priority: 'none',
-    urgent: false,
-    urgentReason: null,
-    status: 'waiting',
-    arrived: true,
-    lateCount: 0,
-    joinedAt: Date.now() - 25 * 60 * 1000,
-    sortKey: Date.now() - 25 * 60 * 1000,
-    calledAt: null,
-    startedAt: null,
-    doneAt: null,
-    arriveDeadline: null,
-    firstEta: { low: 8, mid: 12, high: 16 },
-    lastEta: { low: 8, mid: 12, high: 16 },
-    changes: [],
-    simulated: true,
-  },
-];
+// Queues start empty: tickets exist only when a patient joins, staff add a walk-in,
+// or the Demo Director simulates patients.
+const INITIAL_TICKETS = [];
 
 // ───────────── Event Emitter for Local Realtime ─────────────
 class EventEmitter {
@@ -476,6 +372,34 @@ class MockEngine {
     this.save();
   }
 
+  // Projected wait for a patient who joins right now (0 when a counter is idle and nobody waits)
+  estimateNewJoinerEta(dept, waitingCount = 0) {
+    const open = dept.counters.filter((c) => c.state === 'open');
+    if (open.length === 0) return { low: 0, mid: 0, high: 0, noCounter: true };
+
+    const expected = this.calculateExpectedDuration(dept);
+    const spread = expected * 0.35;
+    const now = this.now();
+
+    const freeAt = open.map((c) => {
+      let t = now;
+      if (c.delayUntil && c.delayUntil > t) t = c.delayUntil;
+      if (c.currentTicketId) t += expected * 60 * 1000 * 0.5;
+      return t;
+    });
+
+    for (let i = 0; i < waitingCount; i += 1) {
+      freeAt.sort((a, b) => a - b);
+      freeAt[0] += expected * 60 * 1000;
+    }
+    freeAt.sort((a, b) => a - b);
+
+    const waitMin = Math.max(0, Math.round((freeAt[0] - now) / 60000));
+    if (waitMin === 0) return { low: 0, mid: 0, high: 0 };
+    const sp = Math.round(spread * Math.sqrt(waitingCount + 1));
+    return { low: Math.max(1, waitMin - sp), mid: waitMin, high: waitMin + sp };
+  }
+
   // ───────────── Sweep Engine (runs every 10s & on action) ─────────────
   sweep() {
     const now = this.now();
@@ -532,16 +456,7 @@ class MockEngine {
         this.simulateQueue(org.id, d.id);
         const waitingTickets = this.db.tickets.filter((t) => t.orgId === org.id && t.deptId === d.id && t.status === 'waiting');
         const openCounters = d.counters.filter((c) => c.state === 'open');
-
-        let eta = { low: 5, mid: 12, high: 18 };
-        if (waitingTickets.length > 0 && waitingTickets[0].lastEta) {
-          eta = waitingTickets[0].lastEta;
-        } else if (openCounters.length === 0) {
-          eta = { low: 0, mid: 0, high: 0, noCounter: true };
-        } else {
-          const expected = this.calculateExpectedDuration(d);
-          eta = { low: Math.max(1, Math.round(expected * 0.7)), mid: Math.round(expected), high: Math.round(expected * 1.3) };
-        }
+        const eta = this.estimateNewJoinerEta(d, waitingTickets.length);
 
         return {
           id: d.id,

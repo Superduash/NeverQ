@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShieldCheck, Lock, Eye, EyeOff, ArrowLeft, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { notify } from '../lib/notify.js';
 import { Button } from '../components/ui/index.js';
-import { Logo } from '../main.jsx';
+import { Logo } from '../components/brand/Logo.jsx';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -121,3 +121,4 @@ export default function AdminLogin() {
     </div>
   );
 }
+

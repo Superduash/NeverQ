@@ -3,26 +3,24 @@ import { Button } from './Button.jsx';
 import { Inbox } from 'lucide-react';
 
 export function EmptyState({
-  title = 'No items found',
-  description = 'There are currently no items matching your criteria.',
+  title = 'Nothing here yet',
+  description,
   icon,
   actionText,
   onAction,
   className = '',
 }) {
   return (
-    <div className={`p-8 text-center rounded-3xl bg-[var(--surface)] border border-[var(--border)] flex flex-col items-center justify-center ${className}`}>
-      <div className="w-12 h-12 rounded-2xl bg-[var(--surface-2)] text-[var(--ink-faint)] flex items-center justify-center mb-3">
-        {icon || <Inbox size={22} />}
+    <div
+      className={`flex flex-col items-center justify-center rounded-[20px] border border-dashed border-[var(--border-strong)] bg-[var(--surface)] p-8 text-center ${className}`}
+    >
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--brand-soft)] text-[var(--brand)]">
+        {icon || <Inbox size={26} />}
       </div>
-      <h4 className="font-heading font-bold text-sm text-[var(--ink)] mb-1">
-        {title}
-      </h4>
-      <p className="text-xs text-[var(--ink-faint)] max-w-xs mb-4 leading-relaxed">
-        {description}
-      </p>
+      <h4 className="mb-1 font-heading text-lg font-bold text-[var(--ink)]">{title}</h4>
+      {description && <p className="mb-5 max-w-xs text-sm leading-5 text-[var(--ink-muted)]">{description}</p>}
       {actionText && onAction && (
-        <Button variant="secondary" size="sm" onClick={onAction}>
+        <Button variant="secondary" onClick={onAction}>
           {actionText}
         </Button>
       )}
