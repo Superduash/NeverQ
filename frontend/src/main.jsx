@@ -2,12 +2,22 @@ import React, { createContext, useContext, useState, useEffect, lazy, Suspense, 
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
-import { io } from 'socket.io-client';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Sun, Moon, Laptop, ArrowLeft, AlertCircle } from 'lucide-react';
-import { mockApi, storage } from './lib/mock.js';
+import { Sun, Moon, ArrowLeft } from 'lucide-react';
+import { storage } from './lib/mock.js';
+import { api } from './lib/api.js';
+import { useLiveData, useSocketRoom, socketManager } from './lib/socket.js';
+import { CustomerLayout } from './components/layout/CustomerLayout.jsx';
+import { StaffLayout } from './components/layout/StaffLayout.jsx';
+import { AdminLayout } from './components/layout/AdminLayout.jsx';
+import { RequireStaff, RequireAdmin } from './components/layout/Guards.jsx';
+import { NotFound } from './components/layout/NotFound.jsx';
+import { ErrorBoundary } from './components/layout/ErrorBoundary.jsx';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './index.css';
+
+// Re-export api and live hooks for backward and module compatibility
+export { api, useLiveData, useSocketRoom };
 
 // ───────────── Theme Context & Provider (Light & Dark Only) ─────────────
 export const ThemeContext = createContext({
@@ -72,9 +82,9 @@ export function ThemeToggle({ className = '' }) {
       aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
     >
       {isDark ? (
-        <Sun size={18} className="text-[var(--accent-2)]" />
+        <Sun size={17} className="text-[var(--accent-2)]" />
       ) : (
-        <Moon size={18} className="text-[var(--brand)]" />
+        <Moon size={17} className="text-[var(--brand)]" />
       )}
     </button>
   );
@@ -113,94 +123,7 @@ export function Logo({ size = 28, showText = true, className = '' }) {
   );
 }
 
-// ───────────── API Client Facade ─────────────
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
-
-export const api = {
-  async listOrgs(params) {
-    if (USE_MOCK) return mockApi.listOrgs(params);
-    const qs = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_URL}/orgs${qs ? `?${qs}` : ''}`);
-    if (!res.ok) throw { status: res.status, message: 'Failed to fetch hospitals' };
-    return res.json();
-  },
-
-  async getOrg(id) {
-    if (USE_MOCK) return mockApi.getOrg(id);
-    const res = await fetch(`${API_URL}/orgs/${id}`);
-    if (!res.ok) throw { status: res.status, message: 'Hospital not found' };
-    return res.json();
-  },
-};
-
-// ───────────── Socket Client Singleton & Hooks ─────────────
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
-
-export const socket = io(SOCKET_URL, {
-  transports: ['websocket', 'polling'],
-  autoConnect: false,
-  reconnectionDelay: 1000,
-  reconnectionDelayMax: 5000,
-});
-
-export function useSocketRoom(room, event, handler) {
-  useEffect(() => {
-    if (!room || !event || !handler) return;
-    socket.connect();
-    socket.emit('join', { room });
-    socket.on(event, handler);
-
-    return () => {
-      socket.off(event, handler);
-      socket.emit('leave', { room });
-    };
-  }, [room, event, handler]);
-}
-
-// 10-second polling safety-net hook that merges/replaces state from payloads
-export function useLiveData(fetcher, { room, event, interval = 10000 } = {}) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const load = useCallback(async () => {
-    try {
-      const res = await fetcher();
-      setData(res);
-      setError(null);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [fetcher]);
-
-  useEffect(() => {
-    load();
-    const timer = setInterval(load, interval);
-    return () => clearInterval(timer);
-  }, [load, interval]);
-
-  // If mock mode, hook into mock subscribe
-  useEffect(() => {
-    if (USE_MOCK && mockApi.subscribe) {
-      const unsubscribe = mockApi.subscribe(() => {
-        load();
-      });
-      return unsubscribe;
-    }
-  }, [load]);
-
-  // Socket listener when configured
-  useSocketRoom(room, event, (payload) => {
-    if (payload) setData(payload);
-  });
-
-  return { data, loading, error, refresh: load };
-}
-
-// ───────────── Route Stubs & Error Boundary ─────────────
+// ───────────── Route Stubs ─────────────
 function RouteStub({ name, description }) {
   const navigate = useNavigate();
   const params = useParams();
@@ -209,10 +132,10 @@ function RouteStub({ name, description }) {
     <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
       <div className="max-w-md w-full p-8 rounded-3xl bg-[var(--surface)] border border-[var(--border)] shadow-[var(--shadow-card)]">
         <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-[var(--surface-2)] text-[var(--brand)] mb-3">
-          Part 2 / 3 Route Stub
+          NeverQ Route
         </span>
         <h2 className="text-xl font-bold mb-2 text-[var(--ink)]">{name}</h2>
-        <p className="text-sm text-[var(--ink-faint)] mb-6">
+        <p className="text-xs text-[var(--ink-faint)] mb-6">
           {description || `Route placeholder for ${window.location.pathname}`}
         </p>
         {Object.keys(params).length > 0 && (
@@ -223,71 +146,13 @@ function RouteStub({ name, description }) {
         <button
           type="button"
           onClick={() => navigate('/')}
-          className="touch-target px-5 py-2.5 rounded-xl bg-gradient-to-r from-[var(--brand)] to-[var(--brand-2)] text-white font-medium text-sm inline-flex items-center gap-2 shadow-[var(--shadow-glow)] hover:opacity-95"
+          className="touch-target px-5 py-2.5 rounded-xl bg-gradient-to-r from-[var(--brand)] to-[var(--brand-2)] text-white font-medium text-xs inline-flex items-center gap-2 shadow-[var(--shadow-glow)] hover:opacity-95"
         >
-          <ArrowLeft size={16} /> Back to Live Map
+          <ArrowLeft size={15} /> Back to Live Map
         </button>
       </div>
     </div>
   );
-}
-
-function NotFound() {
-  const navigate = useNavigate();
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-      <div className="p-8 rounded-3xl bg-[var(--surface)] border border-[var(--border)] shadow-[var(--shadow-card)] max-w-sm w-full">
-        <h1 className="text-4xl font-extrabold text-[var(--brand)] mb-2">404</h1>
-        <p className="text-sm text-[var(--ink-faint)] mb-6">Page not found.</p>
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="touch-target px-5 py-2.5 rounded-xl bg-[var(--brand)] text-white text-sm font-semibold inline-flex items-center gap-2"
-        >
-          <ArrowLeft size={16} /> Return to NeverQ
-        </button>
-      </div>
-    </div>
-  );
-}
-
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error, errorInfo) {
-    console.error('NeverQ boundary caught error:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen flex items-center justify-center p-6 bg-[var(--bg)] text-[var(--ink)]">
-          <div className="p-6 max-w-md w-full rounded-2xl bg-[var(--surface)] border border-[var(--danger)] text-center">
-            <AlertCircle className="mx-auto text-[var(--danger)] mb-3" size={36} />
-            <h2 className="text-lg font-bold mb-2">Something went wrong</h2>
-            <p className="text-xs text-[var(--ink-faint)] mb-4">
-              {this.state.error?.message || 'An unexpected error occurred in the application.'}
-            </p>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="touch-target px-4 py-2 rounded-xl bg-[var(--brand)] text-white text-sm font-medium"
-            >
-              Reload Page
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
 }
 
 // ───────────── AppShell Layout with Transitions ─────────────
@@ -298,40 +163,57 @@ function AppShell() {
   const shouldReduceMotion = useReducedMotion();
 
   return (
-    <div className="h-screen h-[100dvh] flex flex-col overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
-      <AnimatePresence mode="wait">
-        <motion.main
-          key={location.pathname}
-          initial={shouldReduceMotion ? { opacity: 1 } : { opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={shouldReduceMotion ? { opacity: 1 } : { opacity: 0, y: -6 }}
-          transition={{ duration: 0.18, ease: 'easeOut' }}
-          className="flex-1 flex flex-col min-h-0 overflow-hidden"
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={location.pathname}
+        initial={shouldReduceMotion ? { opacity: 1 } : { opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={shouldReduceMotion ? { opacity: 1 } : { opacity: 0, y: -4 }}
+        transition={{ duration: 0.16, ease: 'easeOut' }}
+        className="h-screen h-[100dvh] flex flex-col min-h-0 overflow-hidden"
+      >
+        <Suspense
+          fallback={
+            <div className="flex-1 flex items-center justify-center p-8 bg-[var(--bg)]">
+              <div className="shimmer-box w-full max-w-xl h-64 rounded-3xl" />
+            </div>
+          }
         >
-          <Suspense
-            fallback={
-              <div className="flex-1 flex items-center justify-center p-8">
-                <div className="shimmer-box w-full max-w-xl h-64 rounded-3xl" />
-              </div>
-            }
-          >
-            <Routes location={location}>
+          <Routes location={location}>
+            {/* Customer Routes under CustomerLayout */}
+            <Route element={<CustomerLayout />}>
               <Route path="/" element={<LandingLazy />} />
               <Route path="/hospital/:orgId" element={<RouteStub name="Hospital View" />} />
               <Route path="/join/:orgId/:deptId" element={<RouteStub name="Join Queue" />} />
               <Route path="/t/:token" element={<RouteStub name="Live Ticket Status" />} />
-              <Route path="/staff/login" element={<RouteStub name="Staff Login" />} />
-              <Route path="/staff" element={<RouteStub name="Staff Dashboard" />} />
-              <Route path="/admin/login" element={<RouteStub name="Admin Login" />} />
-              <Route path="/admin" element={<RouteStub name="Admin Dashboard" />} />
-              <Route path="/admin/orgs/:id" element={<RouteStub name="Admin Org Details" />} />
               <Route path="/board/:orgId" element={<RouteStub name="Public Wait Board" />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-        </motion.main>
-      </AnimatePresence>
-    </div>
+            </Route>
+
+            {/* Public Staff & Admin Login */}
+            <Route path="/staff/login" element={<RouteStub name="Staff Login" />} />
+            <Route path="/admin/login" element={<RouteStub name="Admin Login" />} />
+
+            {/* Protected Staff Routes under StaffLayout */}
+            <Route element={<RequireStaff />}>
+              <Route element={<StaffLayout />}>
+                <Route path="/staff" element={<RouteStub name="Staff Dashboard" />} />
+              </Route>
+            </Route>
+
+            {/* Protected Admin Routes under AdminLayout */}
+            <Route element={<RequireAdmin />}>
+              <Route element={<AdminLayout />}>
+                <Route path="/admin" element={<RouteStub name="Admin Dashboard" />} />
+                <Route path="/admin/orgs/:id" element={<RouteStub name="Admin Org Details" />} />
+              </Route>
+            </Route>
+
+            {/* 404 */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 

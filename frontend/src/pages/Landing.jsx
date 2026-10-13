@@ -1,20 +1,28 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
-import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, MapPin, Navigation, Zap, Footprints, Bike, Car,
-  List, Map as MapIcon, X, LocateFixed, Star, PhoneCall,
-  Clock, Users, ExternalLink, ShieldAlert, Sparkles, RefreshCw,
+  Search, MapPin, Footprints, Bike, Car,
+  List, Map as MapIcon, X, LocateFixed, Star,
+  Users, ShieldAlert, Sparkles, RefreshCw,
   Compass, Eye, HeartPulse, Stethoscope, Pill, Bone, Layers,
-  CheckCircle2, ArrowRight, CornerUpRight
+  CheckCircle2, CornerUpRight, PanelLeftClose, PanelLeftOpen,
+  ChevronUp, ChevronDown
 } from 'lucide-react';
 import {
   WAIT_THRESHOLDS, DEMO_HOME, LOCATION_PRESETS, ALL_DEPARTMENTS,
-  haversine, estimateTravel, waitStatus, storage, mockApi
+  estimateTravel, waitStatus, storage
 } from '../lib/mock.js';
-import { Logo, ThemeToggle, useTheme, useLiveData, api } from '../main.jsx';
+import { Logo, ThemeToggle, useTheme } from '../main.jsx';
+import { api } from '../lib/api.js';
+import { useLiveData } from '../lib/socket.js';
+import { notify } from '../lib/notify.js';
+import { NOTIFICATION_MESSAGES } from '../lib/messages.js';
+import {
+  Button, IconButton, Chip, Badge, Segmented,
+  EmptyState, ErrorState, Skeleton
+} from '../components/ui/index.js';
 
 const DEFAULT_MAP_STYLE = import.meta.env.VITE_MAP_STYLE || 'https://tiles.openfreemap.org/styles/liberty';
 
@@ -44,13 +52,77 @@ export default function Landing() {
   const [savedOrgIds, setSavedOrgIds] = useState(() => storage.getSavedOrgs());
   const [recentOrgIds, setRecentOrgIds] = useState(() => storage.getRecentOrgs());
   const [activeTicket, setActiveTicket] = useState(() => storage.getActiveTicket());
-  const [emergencyDismissed, setEmergencyDismissed] = useState(() => sessionStorage.getItem('nq-dismiss-emergency') === 'true');
+  const [emergencyDismissed, setEmergencyDismissed] = useState(() => {
+    try {
+      return sessionStorage.getItem('nq-dismiss-emergency') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Desktop Collapsible Sidebar Preference
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('nq-sidebar-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Mobile Views & Bottom Sheet
   const [mobileView, setMobileView] = useState('map'); // 'map' | 'list'
   const [sheetSnap, setSheetSnap] = useState('peek'); // 'peek' | 'half' | 'full'
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
   const [lastUpdatedTime, setLastUpdatedTime] = useState(() => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
 
-  // Live query fetcher
+  const searchInputRef = useRef(null);
+
+  // ───────────── Active Ticket Verification (Phase 2.3) ─────────────
+  useEffect(() => {
+    const currentTicket = storage.getActiveTicket();
+    if (!currentTicket?.token) return;
+
+    api.getTicket(currentTicket.token)
+      .then((verified) => {
+        if (['done', 'cancelled', 'expired'].includes(verified.status)) {
+          storage.setActiveTicket(null);
+          setActiveTicket(null);
+        } else {
+          setActiveTicket(verified);
+        }
+      })
+      .catch((err) => {
+        // Silent clear on 404 or expired ticket
+        if (err.status === 404 || err.code === 'NOT_FOUND') {
+          storage.setActiveTicket(null);
+          setActiveTicket(null);
+        }
+      });
+  }, []);
+
+  // Toggle Sidebar on Desktop with safe persistence
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('nq-sidebar-collapsed', String(next));
+      } catch (err) {
+        console.warn('Could not persist sidebar collapse state:', err);
+      }
+      return next;
+    });
+  };
+
+  const handleDismissEmergency = () => {
+    setEmergencyDismissed(true);
+    try {
+      sessionStorage.setItem('nq-dismiss-emergency', 'true');
+    } catch (err) {
+      console.warn('Could not persist emergency notice dismissal:', err);
+    }
+  };
+
+  // Live query fetcher using api.listOrgs (Phase 2.1)
   const fetcher = useCallback(async () => {
     const list = await api.listOrgs({
       lat: userLocation?.lat,
@@ -62,15 +134,15 @@ export default function Landing() {
   }, [userLocation, selectedDept]);
 
   const { data: rawHospitals, loading, error, refresh } = useLiveData(fetcher, {
-    room: 'queues',
+    room: 'orgs',
     event: 'queue:update',
     interval: 10000,
   });
 
   // Online / offline listeners
   useEffect(() => {
-    const onOnline = () => { setIsOnline(true); toast.success('Back online'); };
-    const onOffline = () => { setIsOnline(false); toast.error('You are offline. Showing cached wait times.'); };
+    const onOnline = () => { setIsOnline(true); notify.success(NOTIFICATION_MESSAGES.ONLINE); };
+    const onOffline = () => { setIsOnline(false); notify.error(NOTIFICATION_MESSAGES.OFFLINE); };
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
     return () => {
@@ -118,7 +190,7 @@ export default function Landing() {
 
     return enrichedHospitals.filter((h) => {
       const matchName = h.name.toLowerCase().includes(q);
-      const matchArea = h.area.toLowerCase().includes(q);
+      const matchArea = h.area ? h.area.toLowerCase().includes(q) : false;
       const matchDepts = h.departments.some((d) => d.name.toLowerCase().includes(q));
       return matchName || matchArea || matchDepts;
     });
@@ -129,15 +201,15 @@ export default function Landing() {
     return enrichedHospitals.find((h) => h.id === selectedHospitalId) || null;
   }, [enrichedHospitals, selectedHospitalId]);
 
-  // Handle saving org
+  // Handle saving org (Phase 2.2 & 2.4)
   const toggleSave = (id, name, e) => {
     e?.stopPropagation();
     const next = storage.toggleSavedOrg(id);
     setSavedOrgIds(next);
     if (next.includes(id)) {
-      toast.success(`Saved ${name}`);
+      notify.success(NOTIFICATION_MESSAGES.SAVED_ORG(name));
     } else {
-      toast.info(`Removed ${name} from saved`);
+      notify.info(NOTIFICATION_MESSAGES.UNSAVED_ORG(name));
     }
   };
 
@@ -153,11 +225,11 @@ export default function Landing() {
   const requestUserLocation = () => {
     setShowLocationMenu(false);
     if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser');
+      notify.error('Geolocation is not supported by your browser');
       setShowLocationMenu(true);
       return;
     }
-    toast.info('Requesting current location...');
+    notify.info('Requesting current location...');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setUserLocation({
@@ -166,10 +238,10 @@ export default function Landing() {
           lng: pos.coords.longitude,
           label: 'Your Current Location',
         });
-        toast.success('Location updated');
+        notify.success(NOTIFICATION_MESSAGES.LOCATION_SET);
       },
-      (err) => {
-        toast.error('Could not get GPS location. Select a preset below.');
+      () => {
+        notify.error(NOTIFICATION_MESSAGES.LOCATION_DENIED);
         setShowLocationMenu(true);
       },
       { timeout: 8000, enableHighAccuracy: true }
@@ -184,44 +256,19 @@ export default function Landing() {
     }
   };
 
+  const handleCollapsedSearchClick = () => {
+    setIsSidebarCollapsed(false);
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 150);
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 relative overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
-      {/* ───────────── Emergency Strip ───────────── */}
-      {!emergencyDismissed && (
-        <aside
-          aria-label="Medical emergency notice"
-          className="shrink-0 bg-[var(--accent)] text-white px-4 py-2 flex items-center justify-between text-xs font-semibold z-50 select-none shadow-sm"
-        >
-          <div className="flex items-center gap-2">
-            <ShieldAlert size={16} className="shrink-0 animate-pulse" />
-            <span>Medical emergency? Call 112 or visit an emergency room immediately.</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <a
-              href="tel:112"
-              className="touch-target px-2.5 py-1 rounded bg-white text-[var(--accent)] hover:bg-white/90 font-bold transition-transform active:scale-95"
-            >
-              Call 112
-            </a>
-            <button
-              type="button"
-              onClick={() => {
-                setEmergencyDismissed(true);
-                sessionStorage.setItem('nq-dismiss-emergency', 'true');
-              }}
-              className="p-1 hover:bg-black/10 rounded"
-              aria-label="Dismiss emergency notice"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </aside>
-      )}
-
       {/* ───────────── Header / Top Bar ───────────── */}
-      <header className="shrink-0 sticky top-0 z-40 bg-[var(--surface-glass)] backdrop-blur-md border-b border-[var(--border)] px-4 py-2.5 flex items-center justify-between gap-3 shadow-sm">
+      <header className="shrink-0 sticky top-0 z-40 bg-[var(--surface-glass)] backdrop-blur-md border-b border-[var(--border)] px-4 py-2.5 flex items-center justify-between gap-3 shadow-xs">
         <div className="flex items-center gap-3">
-          <Logo size={30} />
+          <Logo size={28} />
           {/* Live indicator dot */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--surface-2)] text-[var(--ink-faint)]">
             <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-[var(--success)] animate-pulse' : 'bg-[var(--danger)]'}`} />
@@ -238,7 +285,7 @@ export default function Landing() {
               className="touch-target px-3 py-1.5 rounded-xl bg-gradient-to-r from-[var(--brand)] to-[var(--brand-2)] text-white text-xs font-bold flex items-center gap-1.5 shadow-[var(--shadow-glow)]"
             >
               <Sparkles size={14} />
-              <span>Ticket #{activeTicket.token}</span>
+              <span>Ticket #{activeTicket.label || activeTicket.token}</span>
             </Link>
           )}
 
@@ -253,355 +300,455 @@ export default function Landing() {
         </div>
       </header>
 
+      {/* ───────────── Mobile Compact Emergency Notice (Dismissible) ───────────── */}
+      {!emergencyDismissed && (
+        <div className="lg:hidden shrink-0 border-b border-[var(--accent)]/20 bg-[var(--accent)]/10 px-3 py-2 flex items-center justify-between gap-2 z-30">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldAlert size={15} className="text-[var(--accent)] shrink-0" />
+            <div className="min-w-0">
+              <span className="text-xs font-bold text-[var(--ink)] block leading-tight">Medical emergency?</span>
+              <span className="text-[11px] text-[var(--ink-faint)] block leading-tight truncate">
+                Call 112 or visit an emergency department.
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <a
+              href="tel:112"
+              className="touch-target px-2.5 py-1 rounded-lg bg-[var(--accent)] text-white font-bold text-xs shadow-xs"
+            >
+              Call 112
+            </a>
+            <button
+              type="button"
+              onClick={handleDismissEmergency}
+              className="p-1 text-[var(--ink-faint)] hover:text-[var(--ink)] rounded"
+              aria-label="Dismiss emergency notice"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ───────────── Pin Placement Mode Bar ───────────── */}
       {isPinMode && (
         <div className="shrink-0 bg-[var(--accent)] text-white px-4 py-2 flex items-center justify-between text-xs font-bold z-40">
-          <span>Tap anywhere on the map to place your location pin.</span>
+          <span>Tap anywhere on the map to place your origin pin.</span>
           <button
             type="button"
             onClick={() => setIsPinMode(false)}
-            className="px-2 py-1 bg-white text-[var(--accent)] rounded font-bold"
+            className="px-2.5 py-1 bg-white text-[var(--accent)] rounded font-bold hover:bg-white/90"
           >
             Cancel
           </button>
         </div>
       )}
 
-      {/* ───────────── Main Content: Desktop Split / Mobile View ───────────── */}
+      {/* ───────────── Main Workspace Layout ───────────── */}
       <div className="flex-1 flex flex-col lg:flex-row min-h-0 relative overflow-hidden">
-        {/* LEFT PANEL: Controls & Hospital List (Desktop 380px, Mobile Sheet / List View) */}
-        <section
+        {/* ═════════════════════════════════════════════════════════════
+            DESKTOP SIDEBAR: Collapsible Rail / 390px Expanded Panel
+            ═════════════════════════════════════════════════════════════ */}
+        <aside
           className={`
-            lg:w-[380px] lg:max-w-[400px] shrink-0 border-r border-[var(--border)] bg-[var(--bg)] flex flex-col h-full min-h-0 z-30
-            ${mobileView === 'list' ? 'flex flex-1 overflow-y-auto' : 'hidden lg:flex overflow-y-auto'}
+            hidden lg:flex flex-col h-full min-h-0 border-r border-[var(--border)] bg-[var(--bg)]
+            transition-[width] duration-300 ease-in-out z-30 shrink-0 relative
+            ${isSidebarCollapsed ? 'w-[68px]' : 'w-[390px]'}
           `}
+          aria-label="Hospitals sidebar"
         >
-          <div className="p-4 flex flex-col gap-3">
-            {/* Search Bar with Autocomplete Match */}
-            <div className="relative">
-              <Search size={18} className="absolute left-3.5 top-3.5 text-[var(--ink-faint)]" />
+          {isSidebarCollapsed ? (
+            /* ──────── Collapsed Rail State (~68px) ──────── */
+            <div className="flex flex-col items-center py-3 px-2 gap-3 h-full overflow-hidden select-none">
+              <IconButton
+                icon={<PanelLeftOpen size={18} />}
+                label="Expand sidebar"
+                onClick={toggleSidebar}
+                variant="secondary"
+              />
+
+              <div className="w-8 h-[1px] bg-[var(--border)] my-1" />
+
+              <IconButton
+                icon={<Search size={18} />}
+                label="Search hospitals"
+                onClick={handleCollapsedSearchClick}
+                variant="ghost"
+              />
+
+              <IconButton
+                icon={<MapPin size={18} />}
+                label="Select origin location"
+                onClick={() => {
+                  setIsSidebarCollapsed(false);
+                  setShowLocationMenu(true);
+                }}
+                variant="ghost"
+              />
+
+              {activeTicket && (
+                <Link
+                  to={`/t/${activeTicket.token}`}
+                  aria-label={`Active ticket #${activeTicket.label || activeTicket.token}`}
+                  title={`Active ticket #${activeTicket.label || activeTicket.token}`}
+                  className="p-2 rounded-xl bg-[var(--brand)]/15 text-[var(--brand)] hover:bg-[var(--brand)] hover:text-white transition-colors"
+                >
+                  <Sparkles size={18} />
+                </Link>
+              )}
+
+              <div className="mt-auto flex flex-col items-center gap-2 pb-2">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-[var(--success)]' : 'bg-[var(--danger)]'}`}
+                  title={isOnline ? 'Connected' : 'Offline'}
+                />
+              </div>
+            </div>
+          ) : (
+            /* ──────── Expanded Sidebar State (~390px) ──────── */
+            <div className="flex flex-col h-full min-h-0 overflow-hidden">
+              {/* Sidebar Header with Collapse Button */}
+              <div className="p-4 pb-2 shrink-0 border-b border-[var(--border)] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h2 className="font-heading font-extrabold text-sm text-[var(--ink)] tracking-tight">
+                    Hospitals & Live Queues
+                  </h2>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-[var(--surface-2)] text-[var(--ink-faint)] font-bold tnum">
+                    {filteredHospitals.length}
+                  </span>
+                </div>
+
+                <IconButton
+                  icon={<PanelLeftClose size={18} />}
+                  label="Collapse sidebar"
+                  onClick={toggleSidebar}
+                  variant="ghost"
+                  size="sm"
+                />
+              </div>
+
+              {/* Sidebar Scrollable Content */}
+              <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-3.5 p-4">
+                {/* Compact Emergency Notice (Inside Sidebar) */}
+                {!emergencyDismissed && (
+                  <CompactEmergencyNotice
+                    onDismiss={handleDismissEmergency}
+                    className="shrink-0"
+                  />
+                )}
+
+                {/* Active Ticket Resume Card (Phase 2.2) */}
+                {activeTicket && (
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[var(--brand)]/12 to-[var(--brand-2)]/12 border border-[var(--brand)]/30 flex items-center justify-between gap-3 shadow-xs">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="priority">My Ticket</Badge>
+                        <span className="font-heading font-extrabold text-xs text-[var(--ink)]">
+                          #{activeTicket.label || activeTicket.token}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[var(--ink-faint)] mt-0.5 truncate">
+                        {activeTicket.org?.name || 'Active queue'} · {activeTicket.dept?.name || 'Live'}
+                      </p>
+                    </div>
+                    <Link to={`/t/${activeTicket.token}`}>
+                      <Button size="sm" variant="primary">
+                        View
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+
+                {/* Search Bar */}
+                <div className="relative shrink-0">
+                  <Search size={16} className="absolute left-3.5 top-3 text-[var(--ink-faint)]" />
+                  <input
+                    ref={searchInputRef}
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    placeholder="Search hospital or department..."
+                    aria-label="Search hospitals or departments"
+                    className="w-full pl-9 pr-9 py-2 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs font-medium focus:border-[var(--brand)] shadow-xs outline-none"
+                  />
+                  {query && (
+                    <button
+                      type="button"
+                      onClick={() => setQuery('')}
+                      className="absolute right-3 top-2.5 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                      aria-label="Clear search"
+                    >
+                      <X size={15} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Department Chips (Horizontally Scrollable) */}
+                <div className="shrink-0 -mx-1 px-1">
+                  <div
+                    className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 scroll-smooth"
+                    role="tablist"
+                    aria-label="Department filters"
+                  >
+                    {ALL_DEPARTMENTS.map((deptName) => {
+                      const Icon = DEPT_ICONS[deptName] || Stethoscope;
+                      const active = selectedDept === deptName;
+                      return (
+                        <Chip
+                          key={deptName}
+                          active={active}
+                          icon={<Icon size={13} />}
+                          onClick={() => setSelectedDept(deptName)}
+                        >
+                          {deptName}
+                        </Chip>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Controls Row: Sort, Travel Mode, Origin */}
+                <div className="shrink-0 flex items-center justify-between gap-2 pt-2 border-t border-[var(--border)]">
+                  {/* Sort Mode */}
+                  <Segmented
+                    value={sortMode}
+                    onChange={setSortMode}
+                    options={[
+                      { value: 'nearest', label: 'Nearest' },
+                      { value: 'fastest', label: 'Fastest' },
+                    ]}
+                  />
+
+                  {/* Travel Mode */}
+                  <Segmented
+                    value={travelMode}
+                    onChange={setTravelMode}
+                    options={[
+                      { value: 'walk', label: '', icon: <Footprints size={14} /> },
+                      { value: 'bike', label: '', icon: <Bike size={14} /> },
+                      { value: 'car', label: '', icon: <Car size={14} /> },
+                    ]}
+                  />
+
+                  {/* Location Selector */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowLocationMenu(!showLocationMenu)}
+                      className="px-2.5 py-1 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs font-medium flex items-center gap-1.5 hover:border-[var(--brand)] transition-colors"
+                      aria-expanded={showLocationMenu}
+                      aria-haspopup="true"
+                    >
+                      <MapPin size={12} className="text-[var(--brand)] shrink-0" />
+                      <span className="truncate max-w-[100px]">{userLocation?.label || 'Origin'}</span>
+                    </button>
+
+                    {showLocationMenu && (
+                      <div className="absolute right-0 top-8 mt-1 w-56 rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-[var(--shadow-card)] p-2 z-50 flex flex-col gap-1 text-xs">
+                        <button
+                          type="button"
+                          onClick={requestUserLocation}
+                          className="p-2 text-left rounded-xl hover:bg-[var(--surface-2)] flex items-center gap-2 font-medium"
+                        >
+                          <LocateFixed size={14} className="text-[var(--brand)]" />
+                          Use GPS Location
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsPinMode(true);
+                            setShowLocationMenu(false);
+                          }}
+                          className="p-2 text-left rounded-xl hover:bg-[var(--surface-2)] flex items-center gap-2 font-medium"
+                        >
+                          <Compass size={14} className="text-[var(--brand)]" />
+                          Choose pin on map
+                        </button>
+                        <div className="my-1 border-t border-[var(--border)]" />
+                        <span className="px-2 py-0.5 text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+                          Demo Presets
+                        </span>
+                        {LOCATION_PRESETS.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setUserLocation(p);
+                              setShowLocationMenu(false);
+                              storage.setLastLocationPreset(p.id);
+                            }}
+                            className={`p-2 text-left rounded-xl hover:bg-[var(--surface-2)] flex items-center justify-between ${userLocation?.id === p.id ? 'font-bold text-[var(--brand)]' : ''}`}
+                          >
+                            <span>{p.label}</span>
+                            {userLocation?.id === p.id && <CheckCircle2 size={13} />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Saved & Recent Horizontal Micro-Row (Phase 2.2) */}
+                {(savedOrgIds.length > 0 || recentOrgIds.length > 0) && (
+                  <div className="shrink-0 pt-2 border-t border-[var(--border)]">
+                    <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block mb-1">
+                      Saved & Recent
+                    </span>
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                      {enrichedHospitals
+                        .filter((h) => savedOrgIds.includes(h.id) || recentOrgIds.includes(h.id))
+                        .map((h) => (
+                          <button
+                            key={h.id}
+                            type="button"
+                            onClick={() => handleSelectHospital(h.id)}
+                            className="touch-target px-2.5 py-1 rounded-xl bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--brand)] shrink-0 flex items-center gap-1.5 text-xs transition-colors"
+                          >
+                            {savedOrgIds.includes(h.id) && <Star size={11} className="fill-[var(--accent-2)] text-[var(--accent-2)]" />}
+                            <span className="font-semibold">{h.name.split(' ')[0]}</span>
+                            <span className={`px-1 py-0.2 rounded text-[10px] font-bold tnum ${
+                              h.status === 'good' ? 'bg-[var(--wait-good-bg)] text-[var(--wait-good-text)]' :
+                              h.status === 'mid' ? 'bg-[var(--wait-mid-bg)] text-[var(--wait-mid-text)]' :
+                              'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)]'
+                            }`}>
+                              ~{h.selectedDept?.eta?.mid}m
+                            </span>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Hospital Cards List */}
+                <div className="flex flex-col gap-3 pt-1">
+                  {loading ? (
+                    <div className="flex flex-col gap-3">
+                      <Skeleton height="120px" />
+                      <Skeleton height="120px" />
+                      <Skeleton height="120px" />
+                    </div>
+                  ) : error ? (
+                    <ErrorState
+                      title="Failed to load live wait times"
+                      message={error.message || 'Server connection error.'}
+                      onRetry={refresh}
+                    />
+                  ) : filteredHospitals.length === 0 ? (
+                    <EmptyState
+                      title="No hospitals match filter"
+                      description='Try selecting "All" departments or clear search criteria.'
+                      actionText="Reset Filters"
+                      onAction={() => { setSelectedDept('All'); setQuery(''); }}
+                    />
+                  ) : (
+                    filteredHospitals.map((h) => (
+                      <HospitalCardItem
+                        key={h.id}
+                        hospital={h}
+                        travelMode={travelMode}
+                        isSelected={selectedHospitalId === h.id}
+                        onSelect={handleSelectHospital}
+                        onJoin={(orgId, deptId) => navigate(`/join/${orgId}/${deptId}`)}
+                        onToggleSave={toggleSave}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </aside>
+
+        {/* ═════════════════════════════════════════════════════════════
+            MOBILE DEDICATED LIST VIEW (When mobileView === 'list')
+            ═════════════════════════════════════════════════════════════ */}
+        {mobileView === 'list' && (
+          <div className="lg:hidden flex-1 flex flex-col h-full min-h-0 overflow-y-auto no-scrollbar p-3.5 pb-24 gap-3 bg-[var(--bg)]">
+            {/* Search Input */}
+            <div className="relative shrink-0">
+              <Search size={16} className="absolute left-3.5 top-3 text-[var(--ink-faint)]" />
               <input
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
                 placeholder="Search hospital or department..."
                 aria-label="Search hospitals or departments"
-                className="w-full pl-10 pr-10 py-2.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] text-sm font-medium focus:border-[var(--brand)] shadow-sm outline-none"
+                className="w-full pl-9 pr-9 py-2 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs font-medium focus:border-[var(--brand)] shadow-xs outline-none"
               />
               {query && (
                 <button
                   type="button"
                   onClick={() => setQuery('')}
-                  className="absolute right-3 top-3 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                  className="absolute right-3 top-2.5 text-[var(--ink-faint)]"
                   aria-label="Clear search"
                 >
-                  <X size={16} />
+                  <X size={15} />
                 </button>
               )}
             </div>
 
             {/* Department Chips */}
-            <div className="relative">
-              <div
-                className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1.5 -mx-1 px-1 scroll-smooth"
-                role="tablist"
-                aria-label="Department filters"
-              >
-                {ALL_DEPARTMENTS.map((deptName) => {
-                  const Icon = DEPT_ICONS[deptName] || Stethoscope;
-                  const active = selectedDept === deptName;
-                  return (
-                    <button
-                      key={deptName}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => setSelectedDept(deptName)}
-                      className={`
-                        touch-target px-3.5 py-1.5 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1.5 transition-all
-                        ${active
-                          ? 'bg-gradient-to-r from-[var(--brand)] to-[var(--brand-2)] text-white shadow-[var(--shadow-glow)]'
-                          : 'bg-[var(--surface)] border border-[var(--border)] text-[var(--ink)] hover:border-[var(--brand)]'}
-                      `}
-                    >
-                      <Icon size={14} />
-                      <span>{deptName}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Controls: Sort, Travel Mode, Location Picker */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[var(--border)]">
-              {/* Sort Mode Segmented */}
-              <div className="flex rounded-xl bg-[var(--surface-2)] p-0.5 border border-[var(--border)] text-xs font-medium">
-                <button
-                  type="button"
-                  onClick={() => setSortMode('nearest')}
-                  className={`px-2.5 py-1 rounded-lg transition-colors ${sortMode === 'nearest' ? 'bg-[var(--surface)] text-[var(--brand)] shadow-xs font-bold' : 'text-[var(--ink-faint)]'}`}
-                >
-                  Nearest
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSortMode('fastest')}
-                  className={`px-2.5 py-1 rounded-lg transition-colors ${sortMode === 'fastest' ? 'bg-[var(--surface)] text-[var(--brand)] shadow-xs font-bold' : 'text-[var(--ink-faint)]'}`}
-                >
-                  Fastest
-                </button>
-              </div>
-
-              {/* Travel Mode Segmented */}
-              <div className="flex rounded-xl bg-[var(--surface-2)] p-0.5 border border-[var(--border)] text-xs font-medium">
-                <button
-                  type="button"
-                  onClick={() => setTravelMode('walk')}
-                  className={`p-1.5 rounded-lg ${travelMode === 'walk' ? 'bg-[var(--surface)] text-[var(--brand)] shadow-xs' : 'text-[var(--ink-faint)]'}`}
-                  title="Walking (~4.5 km/h approx.)"
-                  aria-label="Walk mode"
-                >
-                  <Footprints size={15} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTravelMode('bike')}
-                  className={`p-1.5 rounded-lg ${travelMode === 'bike' ? 'bg-[var(--surface)] text-[var(--brand)] shadow-xs' : 'text-[var(--ink-faint)]'}`}
-                  title="Bicycle (~14 km/h approx.)"
-                  aria-label="Bike mode"
-                >
-                  <Bike size={15} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTravelMode('car')}
-                  className={`p-1.5 rounded-lg ${travelMode === 'car' ? 'bg-[var(--surface)] text-[var(--brand)] shadow-xs' : 'text-[var(--ink-faint)]'}`}
-                  title="Car (~22 km/h approx.)"
-                  aria-label="Car mode"
-                >
-                  <Car size={15} />
-                </button>
-              </div>
-
-              {/* Location Selector Button */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowLocationMenu(!showLocationMenu)}
-                  className="px-2.5 py-1 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs font-medium flex items-center gap-1.5 hover:border-[var(--brand)]"
-                  aria-expanded={showLocationMenu}
-                  aria-haspopup="true"
-                >
-                  <MapPin size={13} className="text-[var(--brand)]" />
-                  <span className="truncate max-w-[120px]">{userLocation?.label || 'Select Origin'}</span>
-                </button>
-
-                {showLocationMenu && (
-                  <div className="absolute right-0 top-8 mt-1 w-60 rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-[var(--shadow-card)] p-2 z-50 flex flex-col gap-1 text-xs">
-                    <button
-                      type="button"
-                      onClick={requestUserLocation}
-                      className="p-2 text-left rounded-xl hover:bg-[var(--surface-2)] flex items-center gap-2 font-medium"
-                    >
-                      <LocateFixed size={14} className="text-[var(--brand)]" />
-                      Use GPS Location
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsPinMode(true);
-                        setShowLocationMenu(false);
-                      }}
-                      className="p-2 text-left rounded-xl hover:bg-[var(--surface-2)] flex items-center gap-2 font-medium"
-                    >
-                      <Compass size={14} className="text-[var(--brand)]" />
-                      Choose pin on map
-                    </button>
-                    <div className="my-1 border-t border-[var(--border)]" />
-                    <span className="px-2 py-0.5 text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                      Presets
-                    </span>
-                    {LOCATION_PRESETS.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => {
-                          setUserLocation(p);
-                          setShowLocationMenu(false);
-                          storage.setLastLocationPreset(p.id);
-                        }}
-                        className={`p-2 text-left rounded-xl hover:bg-[var(--surface-2)] flex items-center justify-between ${userLocation?.id === p.id ? 'font-bold text-[var(--brand)]' : ''}`}
-                      >
-                        <span>{p.label}</span>
-                        {userLocation?.id === p.id && <CheckCircle2 size={13} />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Saved & Recent Horizontal Row */}
-            {(savedOrgIds.length > 0 || recentOrgIds.length > 0) && (
-              <div className="pt-2 border-t border-[var(--border)]">
-                <span className="text-[11px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block mb-1.5">
-                  Saved & Recent
-                </span>
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-                  {enrichedHospitals
-                    .filter((h) => savedOrgIds.includes(h.id) || recentOrgIds.includes(h.id))
-                    .map((h) => (
-                      <button
-                        key={h.id}
-                        type="button"
-                        onClick={() => handleSelectHospital(h.id)}
-                        className="touch-target px-2.5 py-1.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--brand)] shrink-0 flex items-center gap-2 text-xs"
-                      >
-                        {savedOrgIds.includes(h.id) && <Star size={12} className="fill-[var(--accent-2)] text-[var(--accent-2)]" />}
-                        <span className="font-semibold">{h.name.split(' ')[0]}</span>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold tnum ${
-                          h.status === 'good' ? 'bg-[var(--wait-good-bg)] text-[var(--wait-good-text)]' :
-                          h.status === 'mid' ? 'bg-[var(--wait-mid-bg)] text-[var(--wait-mid-text)]' :
-                          'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)]'
-                        }`}>
-                          ~{h.selectedDept?.eta?.mid}m
-                        </span>
-                      </button>
-                    ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Hospital List Items */}
-          <div className="flex-1 px-4 pb-6 flex flex-col gap-3">
-            {loading ? (
-              <div className="flex flex-col gap-3">
-                <div className="shimmer-box h-32 rounded-3xl" />
-                <div className="shimmer-box h-32 rounded-3xl" />
-                <div className="shimmer-box h-32 rounded-3xl" />
-              </div>
-            ) : error ? (
-              <div className="p-6 text-center rounded-2xl bg-[var(--surface)] border border-[var(--danger)]">
-                <p className="text-sm font-semibold mb-3">Failed to load live wait times.</p>
-                <button
-                  type="button"
-                  onClick={refresh}
-                  className="px-4 py-2 rounded-xl bg-[var(--brand)] text-white text-xs font-bold inline-flex items-center gap-1.5"
-                >
-                  <RefreshCw size={14} /> Retry
-                </button>
-              </div>
-            ) : filteredHospitals.length === 0 ? (
-              <div className="p-8 text-center rounded-2xl bg-[var(--surface)] border border-[var(--border)] text-sm">
-                <p className="font-semibold text-[var(--ink)] mb-1">No hospitals match your filter.</p>
-                <p className="text-xs text-[var(--ink-faint)] mb-4">Try selecting "All" departments or clear search.</p>
-                <button
-                  type="button"
-                  onClick={() => { setSelectedDept('All'); setQuery(''); }}
-                  className="px-4 py-2 rounded-xl bg-[var(--brand)] text-white text-xs font-semibold"
-                >
-                  Reset Filters
-                </button>
-              </div>
-            ) : (
-              filteredHospitals.map((h) => {
-                const isSelected = selectedHospitalId === h.id;
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 shrink-0">
+              {ALL_DEPARTMENTS.map((deptName) => {
+                const Icon = DEPT_ICONS[deptName] || Stethoscope;
+                const active = selectedDept === deptName;
                 return (
-                  <article
-                    key={h.id}
-                    onClick={() => handleSelectHospital(h.id)}
-                    className={`
-                      p-4 rounded-3xl bg-[var(--surface)] border transition-all cursor-pointer relative shadow-sm
-                      ${isSelected ? 'border-[var(--brand)] ring-2 ring-[var(--brand)]/30 shadow-[var(--shadow-glow)]' : 'border-[var(--border)] hover:border-[var(--brand)]/50'}
-                    `}
+                  <Chip
+                    key={deptName}
+                    active={active}
+                    icon={<Icon size={13} />}
+                    onClick={() => setSelectedDept(deptName)}
                   >
-                    <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-heading font-bold text-sm text-[var(--ink)]">{h.name}</h3>
-                          {h.demo && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[var(--accent-2)]/20 text-[var(--accent-2)]">
-                              DEMO
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-[var(--ink-faint)]">{h.area} · {h.address}</p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={(e) => toggleSave(h.id, h.name, e)}
-                        className="touch-target p-1 text-[var(--ink-faint)] hover:text-[var(--accent-2)]"
-                        aria-label={h.isSaved ? 'Unsave hospital' : 'Save hospital'}
-                      >
-                        <Star size={16} className={h.isSaved ? 'fill-[var(--accent-2)] text-[var(--accent-2)]' : ''} />
-                      </button>
-                    </div>
-
-                    {/* Wait badge & ETA */}
-                    <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-[var(--border)]">
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2.5 py-1 rounded-xl text-xs font-bold tnum flex items-center gap-1.5 ${
-                          h.status === 'good' ? 'bg-[var(--wait-good-bg)] text-[var(--wait-good-text)]' :
-                          h.status === 'mid' ? 'bg-[var(--wait-mid-bg)] text-[var(--wait-mid-text)]' :
-                          'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)]'
-                        }`}>
-                          <span className={`w-2 h-2 rounded-full ${h.status === 'good' ? 'bg-[var(--wait-good)]' : h.status === 'mid' ? 'bg-[var(--wait-mid)]' : 'bg-[var(--wait-bad)]'}`} />
-                          {h.selectedDept?.eta?.low}–{h.selectedDept?.eta?.high} min wait
-                        </span>
-                        <span className="text-[11px] text-[var(--ink-faint)] font-medium">
-                          {h.selectedDept?.name}
-                        </span>
-                      </div>
-
-                      <div className="text-right tnum">
-                        <span className="text-xs font-semibold text-[var(--brand)]">
-                          ~{h.travelMin} min {travelMode} (approx.)
-                        </span>
-                        <span className="text-[10px] text-[var(--ink-faint)] block">
-                          {h.distanceKm} km away
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Stats & Confidence */}
-                    <div className="flex items-center justify-between mt-2.5 text-[11px] text-[var(--ink-faint)]">
-                      <span className="flex items-center gap-1">
-                        <Users size={12} /> {h.selectedDept?.countersOpen}/{h.selectedDept?.countersTotal} counters open
-                      </span>
-                      <span className="truncate max-w-[180px]">{h.selectedDept?.confidence}</span>
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="flex items-center justify-end gap-2 mt-3">
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleSelectHospital(h.id); }}
-                        className="touch-target px-3 py-1.5 rounded-xl border border-[var(--border)] hover:bg-[var(--surface-2)] text-xs font-semibold text-[var(--ink)]"
-                      >
-                        Details
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/join/${h.id}/${h.selectedDept?.id || 'gen'}`);
-                        }}
-                        className="touch-target px-4 py-1.5 rounded-xl bg-gradient-to-r from-[var(--brand)] to-[var(--brand-2)] text-white text-xs font-bold shadow-[var(--shadow-glow)] hover:opacity-95"
-                      >
-                        Join Queue
-                      </button>
-                    </div>
-                  </article>
+                    {deptName}
+                  </Chip>
                 );
-              })
-            )}
-          </div>
-        </section>
+              })}
+            </div>
 
-        {/* RIGHT PANEL: MapLibre Map Container */}
+            {/* Controls: Sort & Travel */}
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-[var(--border)] shrink-0">
+              <Segmented
+                value={sortMode}
+                onChange={setSortMode}
+                options={[
+                  { value: 'nearest', label: 'Nearest' },
+                  { value: 'fastest', label: 'Fastest' },
+                ]}
+              />
+
+              <Segmented
+                value={travelMode}
+                onChange={setTravelMode}
+                options={[
+                  { value: 'walk', label: '', icon: <Footprints size={14} /> },
+                  { value: 'bike', label: '', icon: <Bike size={14} /> },
+                  { value: 'car', label: '', icon: <Car size={14} /> },
+                ]}
+              />
+            </div>
+
+            {/* Hospital Cards Single Column */}
+            <div className="flex flex-col gap-3">
+              {filteredHospitals.map((h) => (
+                <HospitalCardItem
+                  key={h.id}
+                  hospital={h}
+                  travelMode={travelMode}
+                  isSelected={selectedHospitalId === h.id}
+                  onSelect={handleSelectHospital}
+                  onJoin={(orgId, deptId) => navigate(`/join/${orgId}/${deptId}`)}
+                  onToggleSave={toggleSave}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ═════════════════════════════════════════════════════════════
+            MAP CONTAINER (Desktop + Mobile Background)
+            ═════════════════════════════════════════════════════════════ */}
         <section className={`flex-1 h-full min-h-0 relative overflow-hidden ${mobileView === 'list' ? 'hidden lg:block' : 'block'}`}>
           <MapComponent
             hospitals={enrichedHospitals}
@@ -617,17 +764,24 @@ export default function Landing() {
                 label: 'Custom Pin on Map',
               });
               setIsPinMode(false);
-              toast.success('Origin set to map pin');
+              notify.success(NOTIFICATION_MESSAGES.LOCATION_SET);
             }}
             mapStyle={DEFAULT_MAP_STYLE}
             resolvedTheme={resolvedTheme}
+            isSidebarCollapsed={isSidebarCollapsed}
+            sheetSnap={sheetSnap}
           />
 
-          {/* Mobile Bottom Sheet (Draggable preview of selected hospital or list) */}
+          {/* ───────────── Mobile Bottom Sheet ───────────── */}
           <div className="lg:hidden absolute inset-x-0 bottom-0 z-30 pointer-events-none">
-            {selectedHospital && (
-              <div className="pointer-events-auto bg-[var(--surface)] border-t border-[var(--border)] rounded-t-3xl shadow-[var(--shadow-sheet)] p-4 max-h-[75vh] overflow-y-auto">
-                <div className="sheet-handle mb-3" />
+            {selectedHospital ? (
+              /* Selected Hospital Full Drawer on Mobile */
+              <div className="pointer-events-auto bg-[var(--surface)] border-t border-[var(--border)] rounded-t-3xl shadow-[var(--shadow-sheet)] p-4 max-h-[82dvh] overflow-y-auto pb-24">
+                <div
+                  className="sheet-handle mb-3 cursor-pointer"
+                  onClick={() => setSelectedHospitalId(null)}
+                  title="Close details"
+                />
                 <HospitalSheetDetails
                   hospital={selectedHospital}
                   travelMode={travelMode}
@@ -636,10 +790,85 @@ export default function Landing() {
                   onToggleSave={(id, name) => toggleSave(id, name)}
                 />
               </div>
+            ) : (
+              /* Discovery Results Bottom Sheet with Peek / Half / Full Snap States */
+              <div
+                className={`
+                  pointer-events-auto bg-[var(--surface)] border-t border-[var(--border)] rounded-t-3xl shadow-[var(--shadow-sheet)]
+                  flex flex-col transition-all duration-300 ease-in-out pb-20
+                  ${sheetSnap === 'peek' ? 'h-[78px]' : sheetSnap === 'half' ? 'h-[48dvh]' : 'h-[86dvh]'}
+                `}
+              >
+                {/* Drag Handle & Snap Toggle Header */}
+                <div
+                  className="px-4 pt-2.5 pb-2 shrink-0 cursor-pointer flex flex-col items-center"
+                  onClick={() => {
+                    setSheetSnap(sheetSnap === 'peek' ? 'half' : sheetSnap === 'half' ? 'full' : 'peek');
+                  }}
+                >
+                  <div className="sheet-handle mb-2" />
+                  <div className="w-full flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-heading font-extrabold text-xs text-[var(--ink)]">
+                        Nearby Hospitals ({filteredHospitals.length})
+                      </span>
+                      {filteredHospitals[0] && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[var(--wait-good-bg)] text-[var(--wait-good-text)] tnum">
+                          Fastest ~{filteredHospitals[0].selectedDept?.eta?.mid}m
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 text-[var(--ink-faint)]">
+                      <span className="text-[11px] font-medium">
+                        {sheetSnap === 'peek' ? 'Tap to view' : sheetSnap === 'half' ? 'Full view' : 'Collapse'}
+                      </span>
+                      {sheetSnap === 'peek' ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sheet Body (Hidden in peek state, visible in half/full states) */}
+                {sheetSnap !== 'peek' && (
+                  <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-6 flex flex-col gap-3">
+                    {/* Horizontal department filter chips inside sheet */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 shrink-0">
+                      {ALL_DEPARTMENTS.map((deptName) => {
+                        const Icon = DEPT_ICONS[deptName] || Stethoscope;
+                        const active = selectedDept === deptName;
+                        return (
+                          <Chip
+                            key={deptName}
+                            active={active}
+                            icon={<Icon size={12} />}
+                            onClick={() => setSelectedDept(deptName)}
+                          >
+                            {deptName}
+                          </Chip>
+                        );
+                      })}
+                    </div>
+
+                    {/* Cards */}
+                    <div className="flex flex-col gap-3">
+                      {filteredHospitals.map((h) => (
+                        <HospitalCardItem
+                          key={h.id}
+                          hospital={h}
+                          travelMode={travelMode}
+                          isSelected={selectedHospitalId === h.id}
+                          onSelect={handleSelectHospital}
+                          onJoin={(orgId, deptId) => navigate(`/join/${orgId}/${deptId}`)}
+                          onToggleSave={toggleSave}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
-          {/* Desktop Hospital Side Card Drawer */}
+          {/* ───────────── Desktop Hospital Side Card Drawer ───────────── */}
           <div className="hidden lg:block">
             <AnimatePresence>
               {selectedHospital && (
@@ -648,7 +877,7 @@ export default function Landing() {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 20 }}
                   transition={{ duration: 0.2 }}
-                  className="absolute right-4 top-4 bottom-4 w-96 bg-[var(--surface)] border border-[var(--border)] rounded-3xl shadow-[var(--shadow-card)] p-5 z-30 overflow-y-auto"
+                  className="absolute right-4 top-4 bottom-4 w-96 bg-[var(--surface)] border border-[var(--border)] rounded-3xl shadow-[var(--shadow-card)] p-5 z-30 overflow-y-auto no-scrollbar"
                 >
                   <HospitalSheetDetails
                     hospital={selectedHospital}
@@ -662,20 +891,26 @@ export default function Landing() {
             </AnimatePresence>
           </div>
 
-          {/* Mobile Floating Map/List Switcher */}
-          <div className="lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
+          {/* ───────────── Mobile Floating Map/List Switcher ───────────── */}
+          <div className="lg:hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-40">
             <button
               type="button"
-              onClick={() => setMobileView(mobileView === 'map' ? 'list' : 'map')}
+              onClick={() => {
+                const next = mobileView === 'map' ? 'list' : 'map';
+                setMobileView(next);
+                if (next === 'list') {
+                  setSheetSnap('peek');
+                }
+              }}
               className="touch-target px-5 py-2.5 rounded-full bg-[var(--ink)] text-white font-bold text-xs flex items-center gap-2 shadow-xl active:scale-95 transition-transform"
             >
               {mobileView === 'map' ? (
                 <>
-                  <List size={16} /> Show List ({filteredHospitals.length})
+                  <List size={15} /> Show List ({filteredHospitals.length})
                 </>
               ) : (
                 <>
-                  <MapIcon size={16} /> Show Map
+                  <MapIcon size={15} /> Show Map
                 </>
               )}
             </button>
@@ -683,6 +918,162 @@ export default function Landing() {
         </section>
       </div>
     </div>
+  );
+}
+
+// ───────────── Compact Emergency Notice Component ─────────────
+function CompactEmergencyNotice({ onDismiss, className = "" }) {
+  return (
+    <div
+      role="alert"
+      className={`p-3 rounded-2xl bg-[var(--accent)]/10 border border-[var(--accent)]/25 flex items-center justify-between gap-3 text-xs ${className}`}
+    >
+      <div className="flex items-start gap-2.5 min-w-0">
+        <ShieldAlert size={16} className="text-[var(--accent)] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="font-bold text-[var(--ink)] leading-snug">Medical emergency?</p>
+          <p className="text-[11px] text-[var(--ink-faint)] leading-tight truncate">
+            Call 112 or visit an emergency department.
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <a
+          href="tel:112"
+          className="touch-target px-2.5 py-1.5 rounded-xl bg-[var(--accent)] text-white hover:opacity-90 font-bold text-xs transition-opacity shadow-xs"
+        >
+          Call 112
+        </a>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="p-1 rounded-lg text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-2)] transition-colors"
+          aria-label="Dismiss emergency notice"
+        >
+          <X size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ───────────── Refined Hospital Card Sub-component ─────────────
+function HospitalCardItem({
+  hospital,
+  travelMode,
+  isSelected,
+  onSelect,
+  onJoin,
+  onToggleSave,
+}) {
+  const statusColor =
+    hospital.status === 'good'
+      ? 'bg-[var(--wait-good)]'
+      : hospital.status === 'mid'
+      ? 'bg-[var(--wait-mid)]'
+      : 'bg-[var(--wait-bad)]';
+
+  const badgeStyle =
+    hospital.status === 'good'
+      ? 'bg-[var(--wait-good-bg)] text-[var(--wait-good-text)]'
+      : hospital.status === 'mid'
+      ? 'bg-[var(--wait-mid-bg)] text-[var(--wait-mid-text)]'
+      : 'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)]';
+
+  return (
+    <article
+      onClick={() => onSelect(hospital.id)}
+      className={`
+        p-4 rounded-2xl bg-[var(--surface)] border transition-all cursor-pointer relative shadow-xs hover:shadow-md
+        ${isSelected
+          ? 'border-[var(--brand)] ring-2 ring-[var(--brand)]/30 shadow-[var(--shadow-glow)]'
+          : 'border-[var(--border)] hover:border-[var(--brand)]/50'}
+      `}
+    >
+      {/* 1. Header Row: Name + DEMO Badge + Star Save Button */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-heading font-bold text-sm text-[var(--ink)] truncate">
+              {hospital.name}
+            </h3>
+            {hospital.demo && (
+              <Badge variant="demo">DEMO</Badge>
+            )}
+          </div>
+          {/* Location directly beneath */}
+          <p className="text-xs text-[var(--ink-faint)] mt-0.5 truncate">
+            {hospital.area} · {hospital.address}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={(e) => onToggleSave(hospital.id, hospital.name, e)}
+          className="touch-target p-1.5 -mr-1 -mt-1 text-[var(--ink-faint)] hover:text-[var(--accent-2)] rounded-lg hover:bg-[var(--surface-2)] transition-colors shrink-0"
+          aria-label={hospital.isSaved ? 'Unsave hospital' : 'Save hospital'}
+        >
+          <Star size={16} className={hospital.isSaved ? 'fill-[var(--accent-2)] text-[var(--accent-2)]' : ''} />
+        </button>
+      </div>
+
+      {/* 2. Coherent Row: Wait estimate + Department on left, Travel estimate + Distance on right */}
+      <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-[var(--border)]">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`px-2.5 py-1 rounded-xl text-xs font-bold tnum flex items-center gap-1.5 shrink-0 ${badgeStyle}`}>
+            <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor}`} />
+            <span>{hospital.selectedDept?.eta?.low}–{hospital.selectedDept?.eta?.high}m wait</span>
+          </span>
+          <span className="text-[11px] font-medium text-[var(--ink-faint)] truncate">
+            {hospital.selectedDept?.name}
+          </span>
+        </div>
+
+        <div className="text-right tnum shrink-0">
+          <span className="text-xs font-semibold text-[var(--brand)] block">
+            ~{hospital.travelMin} min ({travelMode})
+          </span>
+          <span className="text-[10px] text-[var(--ink-faint)] block">
+            {hospital.distanceKm} km away
+          </span>
+        </div>
+      </div>
+
+      {/* 3. Secondary Row: Counters + Confidence */}
+      <div className="flex items-center justify-between mt-2.5 text-[11px] text-[var(--ink-faint)]">
+        <span className="flex items-center gap-1.5">
+          <Users size={12} className="shrink-0" />
+          <span>{hospital.selectedDept?.countersOpen}/{hospital.selectedDept?.countersTotal} counters open</span>
+        </span>
+        <span className="truncate max-w-[150px] text-[10px] opacity-80">
+          {hospital.selectedDept?.confidence}
+        </span>
+      </div>
+
+      {/* 4. Action Row: Details & Join Queue consistently aligned */}
+      <div className="flex items-center justify-end gap-2 mt-3 pt-2.5 border-t border-[var(--border)]/60">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect(hospital.id);
+          }}
+        >
+          Details
+        </Button>
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={(e) => {
+            e.stopPropagation();
+            onJoin(hospital.id, hospital.selectedDept?.id || 'gen');
+          }}
+        >
+          Join Queue
+        </Button>
+      </div>
+    </article>
   );
 }
 
@@ -697,9 +1088,7 @@ function HospitalSheetDetails({ hospital, travelMode, onClose, onJoin, onToggleS
           <div className="flex items-center gap-2">
             <h2 className="font-heading font-extrabold text-base text-[var(--ink)]">{hospital.name}</h2>
             {hospital.demo && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[var(--accent-2)]/20 text-[var(--accent-2)]">
-                DEMO
-              </span>
+              <Badge variant="demo">DEMO</Badge>
             )}
           </div>
           <p className="text-xs text-[var(--ink-faint)] mt-0.5">{hospital.address}</p>
@@ -768,13 +1157,13 @@ function HospitalSheetDetails({ hospital, travelMode, onClose, onJoin, onToggleS
                   </div>
                 </div>
 
-                <button
-                  type="button"
+                <Button
+                  size="sm"
+                  variant="primary"
                   onClick={() => onJoin(dept.id)}
-                  className="touch-target px-3.5 py-1.5 rounded-xl bg-[var(--brand)] text-white text-xs font-bold hover:opacity-90 shadow-xs"
                 >
                   Join
-                </button>
+                </Button>
               </div>
             );
           })}
@@ -804,6 +1193,8 @@ function MapComponent({
   onPinPlaced,
   mapStyle,
   resolvedTheme,
+  isSidebarCollapsed,
+  sheetSnap,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -845,10 +1236,9 @@ function MapComponent({
       mapRef.current = mapInstance;
     } catch (err) {
       console.error('Failed to initialize map:', err);
-      toast.error('Could not render interactive map. Showing list view.');
+      notify.error('Could not render interactive map. Showing list view.');
     }
 
-    // ResizeObserver ensures canvas always fills parent dimensions
     const ro = new ResizeObserver(() => {
       mapInstance?.resize();
     });
@@ -869,6 +1259,14 @@ function MapComponent({
     if (!mapRef.current) return;
     mapRef.current.getCanvas().style.cursor = isPinMode ? 'crosshair' : '';
   }, [isPinMode]);
+
+  // Handle map resizing after sidebar transition or sheet snap change
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      mapRef.current?.resize();
+    }, 320);
+    return () => clearTimeout(timer);
+  }, [isSidebarCollapsed, sheetSnap]);
 
   // Initial fitBounds once hospitals load
   useEffect(() => {
@@ -919,11 +1317,9 @@ function MapComponent({
       let markerObj = currentMarkers.get(h.id);
 
       if (!markerObj) {
-        // Outer wrapper (MapLibre handles positioning & transforms on this element)
         const wrapper = document.createElement('div');
         wrapper.className = 'nq-marker-container';
 
-        // Inner compact pill (visual styling exclusively on this element)
         const pill = document.createElement('div');
         pill.className = 'nq-marker-pill';
         wrapper.appendChild(pill);
@@ -941,10 +1337,8 @@ function MapComponent({
         currentMarkers.set(h.id, markerObj);
       }
 
-      // Update position
       markerObj.marker.setLngLat([h.lng, h.lat]);
 
-      // Update content & styling on the inner pill
       const isSelected = h.id === selectedId;
       markerObj.pill.className = `nq-marker-pill ${isSelected ? 'selected' : ''}`;
       markerObj.pill.style.backgroundColor =
