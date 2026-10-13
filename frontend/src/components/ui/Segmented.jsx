@@ -28,7 +28,7 @@ export function Segmented({
               touch-target px-3 py-1 rounded-lg transition-all flex items-center gap-1.5 font-medium
               ${active
                 ? 'bg-[var(--surface)] text-[var(--brand)] font-bold shadow-xs'
-                : 'text-[var(--ink-faint)] hover:text-[var(--ink)]'}
+                : 'text-[var(--ink-muted)] hover:text-[var(--ink)]'}
             `}
             aria-pressed={active}
           >

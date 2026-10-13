@@ -41,7 +41,7 @@ export function Textarea({
         className={`
           w-full rounded-xl bg-[var(--surface)] border text-xs font-medium text-[var(--ink)]
           focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/20 outline-none
-          transition-all p-3 placeholder:text-[var(--ink-faint)]/60 resize-none
+          transition-all p-3 placeholder:text-[var(--ink-faint)] resize-none
           ${error ? 'border-[var(--danger)]' : 'border-[var(--border)]'}
           ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
           ${className}

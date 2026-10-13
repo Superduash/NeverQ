@@ -50,7 +50,7 @@ export const PhoneInput = forwardRef(function PhoneInput(
           className={`
             w-full rounded-xl bg-[var(--surface)] border text-xs font-medium text-[var(--ink)] tnum
             focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/20 outline-none
-            transition-all placeholder:text-[var(--ink-faint)]/60
+            transition-all placeholder:text-[var(--ink-faint)]
             pl-12 pr-3.5 py-2.5 h-10 tracking-wider
             ${error ? 'border-[var(--danger)]' : 'border-[var(--border)]'}
             ${disabled ? 'opacity-50 cursor-not-allowed' : ''}

@@ -8,8 +8,10 @@
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
   --color-brand: var(--brand);
   --color-brand-2: var(--brand-2);
   --color-accent: var(--accent);
@@ -24,30 +26,48 @@
   --color-info: var(--info);
 }
 
-/* ───────────── Design Tokens: Light "Lagoon Daylight" ───────────── */
+/* ───────────── Design Tokens: Light Mode (Lagoon Blue Palette) ─────────────
+   Palette: #03045e, #023e8a, #0077b6, #0096c7, #00b4d8, #48cae4, #90e0ef, #ade8f4, #caf0f8
+*/
 [data-theme="light"], :root {
+  /* Backgrounds & Surfaces */
   --bg: #f4fbff;
-  --bg-gradient: radial-gradient(1200px 700px at 10% -10%, #caf0f8 0%, transparent 60%),
-                 radial-gradient(900px 500px at 90% 10%, #ade8f4 0%, transparent 50%),
-                 linear-gradient(180deg, #f4fbff 0%, #e8f7fd 100%);
+  --bg-gradient: radial-gradient(1200px 700px at 15% -10%, #caf0f8 0%, transparent 60%),
+                 radial-gradient(900px 500px at 85% 10%, #ade8f4 0%, transparent 50%),
+                 linear-gradient(180deg, #f4fbff 0%, #eaf7fd 100%);
   --surface: #ffffff;
-  --surface-2: #eaf7fd;
-  --surface-glass: rgba(255, 255, 255, 0.85);
-  --border: rgba(2, 62, 138, 0.12);
-  --border-strong: rgba(2, 62, 138, 0.22);
+  --surface-2: #caf0f8;
+  --surface-hover: #ade8f4;
+  --surface-active: #90e0ef;
+  --surface-glass: rgba(255, 255, 255, 0.90);
+
+  /* Borders & Focus Ring */
+  --border: rgba(0, 119, 182, 0.16);
+  --border-strong: rgba(0, 119, 182, 0.30);
+  --ring: #0077b6;
+
+  /* Typography: High-contrast dark blues on light surfaces */
   --ink: #03045e;
   --ink-muted: #023e8a;
-  --ink-faint: #42608f;
+  --ink-faint: #0077b6;
+
+  /* Brand Colors */
   --brand: #0077b6;
-  --brand-2: #00b4d8;
-  --brand-gradient: linear-gradient(135deg, #0077b6 0%, #00b4d8 100%);
+  --brand-2: #0096c7;
+  --brand-gradient: linear-gradient(135deg, #0077b6 0%, #0096c7 100%);
+
+  /* Accents & Chips */
   --accent: #ff6b57;
   --accent-2: #ffb703;
-  --ring: #0077b6;
-  --shadow-glow: 0 4px 20px -2px rgba(0, 119, 182, 0.25);
-  --shadow-card: 0 1px 3px rgba(3, 4, 94, 0.05), 0 10px 28px -8px rgba(0, 119, 182, 0.15);
-  --shadow-sheet: 0 -8px 32px -4px rgba(3, 4, 94, 0.12);
+  --chip-bg: #ade8f4;
+  --chip-text: #023e8a;
 
+  /* Shadows */
+  --shadow-glow: 0 4px 18px -2px rgba(0, 119, 182, 0.22);
+  --shadow-card: 0 1px 3px rgba(3, 4, 94, 0.05), 0 8px 24px -6px rgba(0, 119, 182, 0.12);
+  --shadow-sheet: 0 -8px 28px -4px rgba(3, 4, 94, 0.10);
+
+  /* Semantic Wait Times */
   --wait-good: #10b981;
   --wait-good-bg: #d1fae5;
   --wait-good-text: #065f46;
@@ -64,54 +84,69 @@
   --success: #10b981;
   --info: #0284c7;
 
-  --chip-bg: #e0f2fe;
-  --chip-text: #0369a1;
   --map-filter: none;
 }
 
-/* ───────────── Design Tokens: Dark "Midnight Reef" ───────────── */
+/* ───────────── Design Tokens: Dark Mode (Midnight Reef Palette) ─────────────
+   Surfaces: #00111c, #001523, #001a2c, #002137, #00253e, #002945, #002e4e, #003356, #003a61, #00406c
+   Foregrounds: Light on dark (off-white, cyan, mint, luminous accents)
+*/
 [data-theme="dark"] {
+  /* Backgrounds & Surfaces */
   --bg: #00111c;
-  --bg-gradient: radial-gradient(1000px 600px at 20% -10%, #00253e 0%, transparent 60%),
-                 radial-gradient(800px 500px at 80% 20%, #001f33 0%, transparent 50%),
+  --bg-gradient: radial-gradient(1100px 650px at 15% -10%, #002137 0%, transparent 60%),
+                 radial-gradient(850px 500px at 85% 15%, #001a2c 0%, transparent 50%),
                  linear-gradient(180deg, #00111c 0%, #001523 100%);
   --surface: #001a2c;
   --surface-2: #002137;
-  --surface-glass: rgba(0, 26, 44, 0.82);
-  --border: rgba(34, 211, 238, 0.18);
-  --border-strong: rgba(34, 211, 238, 0.35);
-  --ink: #e0f2fe;
-  --ink-muted: #93c5fd;
-  --ink-faint: #64748b;
-  --brand: #22d3ee;
-  --brand-2: #5af0c4;
-  --brand-gradient: linear-gradient(135deg, #22d3ee 0%, #5af0c4 100%);
+  --surface-hover: #00253e;
+  --surface-active: #002945;
+  --surface-glass: rgba(0, 26, 44, 0.90);
+
+  /* Borders & Separation (Palette blues) */
+  --border: #003356;
+  --border-strong: #003a61;
+  --ring: #38bdf8;
+
+  /* Typography / Foregrounds: Accessible light text on dark surfaces */
+  --ink: #f0f9ff;
+  --ink-muted: #bae6fd;
+  --ink-faint: #94a3b8;
+
+  /* Brand Colors: Luminous oceanic cyan */
+  --brand: #0096c7;
+  --brand-2: #00b4d8;
+  --brand-gradient: linear-gradient(135deg, #0077b6 0%, #0096c7 100%);
+
+  /* Accents & Chips */
   --accent: #f472b6;
   --accent-2: #a78bfa;
-  --ring: #22d3ee;
-  --shadow-glow: 0 0 25px -4px rgba(34, 211, 238, 0.35);
-  --shadow-card: 0 0 0 1px rgba(34, 211, 238, 0.14), 0 12px 30px -10px rgba(0, 0, 0, 0.7);
-  --shadow-sheet: 0 -8px 36px 0 rgba(0, 0, 0, 0.85);
+  --chip-bg: #002945;
+  --chip-text: #7dd3fc;
 
+  /* Shadows */
+  --shadow-glow: 0 0 20px -3px rgba(56, 189, 248, 0.28);
+  --shadow-card: 0 0 0 1px #003356, 0 10px 24px -8px rgba(0, 0, 0, 0.65);
+  --shadow-sheet: 0 -8px 32px 0 rgba(0, 0, 0, 0.80);
+
+  /* Semantic Wait Times */
   --wait-good: #5af0c4;
-  --wait-good-bg: rgba(90, 240, 196, 0.15);
+  --wait-good-bg: rgba(90, 240, 196, 0.16);
   --wait-good-text: #5af0c4;
 
   --wait-mid: #fbbf24;
-  --wait-mid-bg: rgba(251, 191, 36, 0.15);
+  --wait-mid-bg: rgba(251, 191, 36, 0.16);
   --wait-mid-text: #fcd34d;
 
   --wait-bad: #fb7185;
-  --wait-bad-bg: rgba(251, 113, 133, 0.18);
+  --wait-bad-bg: rgba(251, 113, 133, 0.20);
   --wait-bad-text: #fda4af;
 
   --danger: #fb7185;
   --success: #5af0c4;
   --info: #38bdf8;
 
-  --chip-bg: #002e4e;
-  --chip-text: #7dd3fc;
-  --map-filter: brightness(0.85) contrast(1.15) hue-rotate(200deg);
+  --map-filter: brightness(0.8) contrast(1.18) invert(0.92) hue-rotate(195deg) saturate(1.1);
 }
 
 /* ───────────── Base Resets & Layout Safety ───────────── */
@@ -127,7 +162,6 @@ html, body {
   background-attachment: fixed;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -167,6 +201,27 @@ h1, h2, h3, h4, h5, h6 {
 :focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+/* Accessible Form Controls & Placeholders */
+input, select, textarea {
+  color: var(--ink);
+  background-color: var(--surface);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--ink-faint) !important;
+  opacity: 0.85 !important;
+}
+
+select option {
+  background-color: var(--surface);
+  color: var(--ink);
+}
+
+:disabled, [aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 /* Custom scrollbars */
@@ -234,6 +289,8 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-sans) !important;
 }
 
+
+
 .maplibregl-ctrl-group {
   background: var(--surface-glass) !important;
   backdrop-filter: blur(12px) !important;
@@ -247,10 +304,51 @@ h1, h2, h3, h4, h5, h6 {
   width: 38px !important;
   height: 38px !important;
   border-bottom: 1px solid var(--border) !important;
+  background-color: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: background-color 0.15s ease !important;
 }
 
 .maplibregl-ctrl-group button:last-child {
   border-bottom: none !important;
+}
+
+/* Light mode specific map control styling */
+[data-theme="light"] .maplibregl-ctrl-group {
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-color: rgba(2, 62, 138, 0.16) !important;
+}
+
+[data-theme="light"] .maplibregl-ctrl-group button:hover {
+  background-color: var(--surface-2) !important;
+}
+
+/* Dark mode specific map control styling (+ and - zoom buttons high contrast) */
+[data-theme="dark"] .maplibregl-ctrl-group {
+  background: rgba(0, 26, 44, 0.94) !important;
+  border-color: rgba(34, 211, 238, 0.35) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 12px rgba(34, 211, 238, 0.25) !important;
+}
+
+[data-theme="dark"] .maplibregl-ctrl-group button {
+  border-bottom-color: rgba(34, 211, 238, 0.25) !important;
+}
+
+[data-theme="dark"] .maplibregl-ctrl-group button:hover {
+  background-color: rgba(34, 211, 238, 0.2) !important;
+}
+
+/* Make + and - zoom icons crisp white / luminous in dark mode */
+[data-theme="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1) brightness(2.2) contrast(1.2) !important;
+  opacity: 0.95 !important;
+}
+
+[data-theme="dark"] .maplibregl-ctrl-group button:hover .maplibregl-ctrl-icon {
+  opacity: 1 !important;
+  filter: invert(1) brightness(2.8) drop-shadow(0 0 3px rgba(34, 211, 238, 0.8)) !important;
 }
 
 .maplibregl-ctrl-attrib {
@@ -261,10 +359,22 @@ h1, h2, h3, h4, h5, h6 {
   padding: 2px 8px !important;
   border-radius: 6px !important;
   margin: 4px !important;
+  border: 1px solid var(--border) !important;
 }
 .maplibregl-ctrl-attrib a {
   color: var(--brand) !important;
   text-decoration: none !important;
+}
+
+[data-theme="dark"] .maplibregl-ctrl-attrib {
+  background: rgba(0, 26, 44, 0.92) !important;
+  border-color: rgba(34, 211, 238, 0.3) !important;
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .maplibregl-ctrl-attrib-button {
+  filter: invert(1) brightness(2) !important;
+  background-color: rgba(0, 26, 44, 0.92) !important;
 }
 
 /* ───────────── MapLibre Marker Container & Pill Styling ───────────── */

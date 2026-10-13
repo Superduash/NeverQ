@@ -41,7 +41,7 @@ export const Input = forwardRef(function Input(
           className={`
             w-full rounded-xl bg-[var(--surface)] border text-xs font-medium text-[var(--ink)]
             focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/20 outline-none
-            transition-all placeholder:text-[var(--ink-faint)]/60
+            transition-all placeholder:text-[var(--ink-faint)]
             ${iconLeft ? 'pl-9' : 'pl-3.5'}
             ${iconRight || (onClear && value) ? 'pr-9' : 'pr-3.5'}
             py-2.5 h-10

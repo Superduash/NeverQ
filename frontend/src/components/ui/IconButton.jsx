@@ -28,7 +28,7 @@ export function IconButton({
     secondary:
       'bg-[var(--surface)] border border-[var(--border)] text-[var(--ink)] hover:bg-[var(--surface-2)] hover:border-[var(--brand)]/40 active:scale-[0.98]',
     ghost:
-      'bg-transparent text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-2)]',
+      'bg-transparent text-[var(--ink-muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-2)]',
     danger:
       'bg-[var(--danger)] text-white hover:opacity-90 active:scale-[0.98]',
   }[variant] || '';

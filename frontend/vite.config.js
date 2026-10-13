@@ -10,6 +10,33 @@ import { fileURLToPath, URL } from "node:url";
 
 const OPENFREEMAP = /^https:\/\/tiles\.openfreemap\.org\/.*/i;
 
+const cleanCssWarningsPlugin = {
+  name: "clean-css-warnings",
+  enforce: "post",
+  transform(code, id) {
+    if (id.endsWith(".css") || id.includes(".css?")) {
+      let modified = code;
+      if (modified.includes("-webkit-text-size-adjust")) {
+        modified = modified.replace(/-webkit-text-size-adjust:\s*100%;?/g, "text-size-adjust: 100%;");
+      }
+      if (modified.includes("::-moz-focus-inner")) {
+        modified = modified.replace(/\.maplibregl-ctrl button::-moz-focus-inner\s*\{[^}]*\}/g, "");
+      }
+      return { code: modified, map: null };
+    }
+  },
+  generateBundle(_, bundle) {
+    for (const fileName in bundle) {
+      const file = bundle[fileName];
+      if (file.type === "asset" && fileName.endsWith(".css") && typeof file.source === "string") {
+        file.source = file.source
+          .replace(/-webkit-text-size-adjust:\s*100%;?/g, "text-size-adjust: 100%;")
+          .replace(/\.maplibregl-ctrl button::-moz-focus-inner\s*\{[^}]*\}/g, "");
+      }
+    }
+  },
+};
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -19,6 +46,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    cleanCssWarningsPlugin,
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: false,

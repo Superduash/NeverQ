@@ -24,7 +24,10 @@ import {
   EmptyState, ErrorState, Skeleton
 } from '../components/ui/index.js';
 
-const DEFAULT_MAP_STYLE = import.meta.env.VITE_MAP_STYLE || 'https://tiles.openfreemap.org/styles/liberty';
+const OPENFREEMAP_STYLES = {
+  bright: import.meta.env.VITE_MAP_STYLE_BRIGHT || 'https://tiles.openfreemap.org/styles/liberty',
+  dark: import.meta.env.VITE_MAP_STYLE_DARK || 'https://tiles.openfreemap.org/styles/dark',
+};
 
 // Department name to Lucide icon mapping
 const DEPT_ICONS = {
@@ -214,12 +217,25 @@ export default function Landing() {
   };
 
   // Select hospital handler
-  const handleSelectHospital = (id) => {
+  const handleSelectHospital = useCallback((id) => {
     setSelectedHospitalId(id);
     const updatedRecent = storage.addRecentOrg(id);
     setRecentOrgIds(updatedRecent);
     setSheetSnap('half');
-  };
+  }, []);
+
+  const handlePinPlaced = useCallback((coords) => {
+    if (coords && typeof coords.lat === 'number' && typeof coords.lng === 'number') {
+      setUserLocation({
+        id: 'custom',
+        lat: coords.lat,
+        lng: coords.lng,
+        label: 'Custom Pin on Map',
+      });
+      setIsPinMode(false);
+      notify.success(NOTIFICATION_MESSAGES.LOCATION_SET);
+    }
+  }, []);
 
   // Location handler: Geolocation
   const requestUserLocation = () => {
@@ -270,10 +286,10 @@ export default function Landing() {
         <div className="flex items-center gap-3">
           <Logo size={28} />
           {/* Live indicator dot */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--surface-2)] text-[var(--ink-faint)]">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-[var(--surface-2)] text-[var(--ink-muted)]">
             <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-[var(--success)] animate-pulse' : 'bg-[var(--danger)]'}`} />
             <span className="hidden sm:inline">{isOnline ? 'Live' : 'Offline'}</span>
-            <span className="text-[10px] opacity-70 tnum">({lastUpdatedTime})</span>
+            <span className="text-[10px] text-[var(--ink-faint)] tnum font-semibold">({lastUpdatedTime})</span>
           </div>
         </div>
 
@@ -291,7 +307,7 @@ export default function Landing() {
 
           <Link
             to="/staff/login"
-            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg text-[var(--ink-faint)] hover:text-[var(--brand)] hover:bg-[var(--surface-2)] transition-colors"
+            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg text-[var(--ink-muted)] hover:text-[var(--brand)] hover:bg-[var(--surface-2)] transition-colors"
           >
             Staff
           </Link>
@@ -348,13 +364,13 @@ export default function Landing() {
       {/* ───────────── Main Workspace Layout ───────────── */}
       <div className="flex-1 flex flex-col lg:flex-row min-h-0 relative overflow-hidden">
         {/* ═════════════════════════════════════════════════════════════
-            DESKTOP SIDEBAR: Collapsible Rail / 390px Expanded Panel
+            DESKTOP SIDEBAR: Collapsible Rail / 420px Expanded Panel
             ═════════════════════════════════════════════════════════════ */}
         <aside
           className={`
             hidden lg:flex flex-col h-full min-h-0 border-r border-[var(--border)] bg-[var(--bg)]
             transition-[width] duration-300 ease-in-out z-30 shrink-0 relative
-            ${isSidebarCollapsed ? 'w-[68px]' : 'w-[390px]'}
+            ${isSidebarCollapsed ? 'w-[68px]' : 'w-[420px] xl:w-[450px]'}
           `}
           aria-label="Hospitals sidebar"
         >
@@ -406,7 +422,7 @@ export default function Landing() {
               </div>
             </div>
           ) : (
-            /* ──────── Expanded Sidebar State (~390px) ──────── */
+            /* ──────── Expanded Sidebar State (~420px-450px) ──────── */
             <div className="flex flex-col h-full min-h-0 overflow-hidden">
               {/* Sidebar Header with Collapse Button */}
               <div className="p-4 pb-2 shrink-0 border-b border-[var(--border)] flex items-center justify-between">
@@ -509,7 +525,7 @@ export default function Landing() {
                   </div>
                 </div>
 
-                {/* Controls Row: Sort, Travel Mode, Origin */}
+                {/* Filters Row: Sort Mode & Travel Mode */}
                 <div className="shrink-0 flex items-center justify-between gap-2 pt-2 border-t border-[var(--border)]">
                   {/* Sort Mode */}
                   <Segmented
@@ -531,63 +547,98 @@ export default function Landing() {
                       { value: 'car', label: '', icon: <Car size={14} /> },
                     ]}
                   />
+                </div>
 
-                  {/* Location Selector */}
-                  <div className="relative">
+                {/* Dedicated Origin Location Bar (In-Flow, No Map Overlap) */}
+                <div className="shrink-0 rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]/60 p-2.5 flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="p-1.5 rounded-lg bg-[var(--brand)]/15 text-[var(--brand)] shrink-0">
+                        <MapPin size={14} />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block">
+                          Origin Location
+                        </span>
+                        <span className="text-xs font-semibold text-[var(--ink)] block truncate">
+                          {userLocation?.label || 'Home'}
+                        </span>
+                      </div>
+                    </div>
                     <button
                       type="button"
                       onClick={() => setShowLocationMenu(!showLocationMenu)}
-                      className="px-2.5 py-1 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs font-medium flex items-center gap-1.5 hover:border-[var(--brand)] transition-colors"
+                      className="px-2.5 py-1 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs font-semibold text-[var(--brand)] hover:border-[var(--brand)] shrink-0 flex items-center gap-1 transition-colors"
                       aria-expanded={showLocationMenu}
-                      aria-haspopup="true"
                     >
-                      <MapPin size={12} className="text-[var(--brand)] shrink-0" />
-                      <span className="truncate max-w-[100px]">{userLocation?.label || 'Origin'}</span>
+                      <span>{showLocationMenu ? 'Close' : 'Change'}</span>
+                      {showLocationMenu ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                     </button>
+                  </div>
 
+                  {/* In-flow Collapsible Location Panel */}
+                  <AnimatePresence>
                     {showLocationMenu && (
-                      <div className="absolute right-0 top-8 mt-1 w-56 rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-[var(--shadow-card)] p-2 z-50 flex flex-col gap-1 text-xs">
-                        <button
-                          type="button"
-                          onClick={requestUserLocation}
-                          className="p-2 text-left rounded-xl hover:bg-[var(--surface-2)] flex items-center gap-2 font-medium"
-                        >
-                          <LocateFixed size={14} className="text-[var(--brand)]" />
-                          Use GPS Location
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsPinMode(true);
-                            setShowLocationMenu(false);
-                          }}
-                          className="p-2 text-left rounded-xl hover:bg-[var(--surface-2)] flex items-center gap-2 font-medium"
-                        >
-                          <Compass size={14} className="text-[var(--brand)]" />
-                          Choose pin on map
-                        </button>
-                        <div className="my-1 border-t border-[var(--border)]" />
-                        <span className="px-2 py-0.5 text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                          Demo Presets
-                        </span>
-                        {LOCATION_PRESETS.map((p) => (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.18, ease: 'easeOut' }}
+                        className="overflow-hidden flex flex-col gap-1.5 pt-2 border-t border-[var(--border)]"
+                      >
+                        <div className="grid grid-cols-2 gap-1.5">
                           <button
-                            key={p.id}
+                            type="button"
+                            onClick={requestUserLocation}
+                            className="p-2 rounded-xl bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--brand)] text-left flex items-center gap-2 text-xs font-medium transition-colors"
+                          >
+                            <LocateFixed size={14} className="text-[var(--brand)] shrink-0" />
+                            <span className="truncate">GPS Location</span>
+                          </button>
+                          <button
                             type="button"
                             onClick={() => {
-                              setUserLocation(p);
+                              setIsPinMode(true);
                               setShowLocationMenu(false);
-                              storage.setLastLocationPreset(p.id);
                             }}
-                            className={`p-2 text-left rounded-xl hover:bg-[var(--surface-2)] flex items-center justify-between ${userLocation?.id === p.id ? 'font-bold text-[var(--brand)]' : ''}`}
+                            className="p-2 rounded-xl bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--brand)] text-left flex items-center gap-2 text-xs font-medium transition-colors"
                           >
-                            <span>{p.label}</span>
-                            {userLocation?.id === p.id && <CheckCircle2 size={13} />}
+                            <Compass size={14} className="text-[var(--brand)] shrink-0" />
+                            <span className="truncate">Pin on Map</span>
                           </button>
-                        ))}
-                      </div>
+                        </div>
+
+                        <div className="pt-1">
+                          <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block mb-1">
+                            Demo Presets
+                          </span>
+                          <div className="flex flex-col gap-1">
+                            {LOCATION_PRESETS.map((p) => {
+                              const isSelected = userLocation?.id === p.id;
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setUserLocation(p);
+                                    setShowLocationMenu(false);
+                                    storage.setLastLocationPreset(p.id);
+                                  }}
+                                  className={`p-2 rounded-xl text-left flex items-center justify-between text-xs transition-colors ${isSelected
+                                      ? 'bg-[var(--surface)] border border-[var(--brand)] font-bold text-[var(--brand)] shadow-xs'
+                                      : 'hover:bg-[var(--surface)] border border-transparent font-medium text-[var(--ink)]'
+                                    }`}
+                                >
+                                  <span className="truncate">{p.label}</span>
+                                  {isSelected && <CheckCircle2 size={13} className="shrink-0 text-[var(--brand)]" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </motion.div>
                     )}
-                  </div>
+                  </AnimatePresence>
                 </div>
 
                 {/* Saved & Recent Horizontal Micro-Row (Phase 2.2) */}
@@ -608,11 +659,10 @@ export default function Landing() {
                           >
                             {savedOrgIds.includes(h.id) && <Star size={11} className="fill-[var(--accent-2)] text-[var(--accent-2)]" />}
                             <span className="font-semibold">{h.name.split(' ')[0]}</span>
-                            <span className={`px-1 py-0.2 rounded text-[10px] font-bold tnum ${
-                              h.status === 'good' ? 'bg-[var(--wait-good-bg)] text-[var(--wait-good-text)]' :
-                              h.status === 'mid' ? 'bg-[var(--wait-mid-bg)] text-[var(--wait-mid-text)]' :
-                              'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)]'
-                            }`}>
+                            <span className={`px-1 py-0.2 rounded text-[10px] font-bold tnum ${h.status === 'good' ? 'bg-[var(--wait-good-bg)] text-[var(--wait-good-text)]' :
+                                h.status === 'mid' ? 'bg-[var(--wait-mid-bg)] text-[var(--wait-mid-text)]' :
+                                  'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)]'
+                              }`}>
                               ~{h.selectedDept?.eta?.mid}m
                             </span>
                           </button>
@@ -729,6 +779,99 @@ export default function Landing() {
               />
             </div>
 
+            {/* Dedicated Origin Location Bar on Mobile */}
+            <div className="shrink-0 rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]/60 p-2.5 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-1.5 rounded-lg bg-[var(--brand)]/15 text-[var(--brand)] shrink-0">
+                    <MapPin size={14} />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block">
+                      Origin Location
+                    </span>
+                    <span className="text-xs font-semibold text-[var(--ink)] block truncate">
+                      {userLocation?.label || 'Home'}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLocationMenu(!showLocationMenu)}
+                  className="px-2.5 py-1 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs font-semibold text-[var(--brand)] hover:border-[var(--brand)] shrink-0 flex items-center gap-1 transition-colors"
+                  aria-expanded={showLocationMenu}
+                >
+                  <span>{showLocationMenu ? 'Close' : 'Change'}</span>
+                  {showLocationMenu ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                </button>
+              </div>
+
+              {/* In-flow Collapsible Location Panel */}
+              <AnimatePresence>
+                {showLocationMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                    className="overflow-hidden flex flex-col gap-1.5 pt-2 border-t border-[var(--border)]"
+                  >
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={requestUserLocation}
+                        className="p-2 rounded-xl bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--brand)] text-left flex items-center gap-2 text-xs font-medium transition-colors"
+                      >
+                        <LocateFixed size={14} className="text-[var(--brand)] shrink-0" />
+                        <span className="truncate">GPS Location</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileView('map');
+                          setIsPinMode(true);
+                          setShowLocationMenu(false);
+                        }}
+                        className="p-2 rounded-xl bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--brand)] text-left flex items-center gap-2 text-xs font-medium transition-colors"
+                      >
+                        <Compass size={14} className="text-[var(--brand)] shrink-0" />
+                        <span className="truncate">Pin on Map</span>
+                      </button>
+                    </div>
+
+                    <div className="pt-1">
+                      <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block mb-1">
+                        Demo Presets
+                      </span>
+                      <div className="flex flex-col gap-1">
+                        {LOCATION_PRESETS.map((p) => {
+                          const isSelected = userLocation?.id === p.id;
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                setUserLocation(p);
+                                setShowLocationMenu(false);
+                                storage.setLastLocationPreset(p.id);
+                              }}
+                              className={`p-2 rounded-xl text-left flex items-center justify-between text-xs transition-colors ${isSelected
+                                  ? 'bg-[var(--surface)] border border-[var(--brand)] font-bold text-[var(--brand)] shadow-xs'
+                                  : 'hover:bg-[var(--surface)] border border-transparent font-medium text-[var(--ink)]'
+                                }`}
+                            >
+                              <span className="truncate">{p.label}</span>
+                              {isSelected && <CheckCircle2 size={13} className="shrink-0 text-[var(--brand)]" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             {/* Hospital Cards Single Column */}
             <div className="flex flex-col gap-3">
               {filteredHospitals.map((h) => (
@@ -756,17 +899,7 @@ export default function Landing() {
             onSelectHospital={handleSelectHospital}
             userLocation={userLocation}
             isPinMode={isPinMode}
-            onPinPlaced={(coords) => {
-              setUserLocation({
-                id: 'custom',
-                lat: coords.lat,
-                lng: coords.lng,
-                label: 'Custom Pin on Map',
-              });
-              setIsPinMode(false);
-              notify.success(NOTIFICATION_MESSAGES.LOCATION_SET);
-            }}
-            mapStyle={DEFAULT_MAP_STYLE}
+            onPinPlaced={handlePinPlaced}
             resolvedTheme={resolvedTheme}
             isSidebarCollapsed={isSidebarCollapsed}
             sheetSnap={sheetSnap}
@@ -970,15 +1103,15 @@ function HospitalCardItem({
     hospital.status === 'good'
       ? 'bg-[var(--wait-good)]'
       : hospital.status === 'mid'
-      ? 'bg-[var(--wait-mid)]'
-      : 'bg-[var(--wait-bad)]';
+        ? 'bg-[var(--wait-mid)]'
+        : 'bg-[var(--wait-bad)]';
 
   const badgeStyle =
     hospital.status === 'good'
       ? 'bg-[var(--wait-good-bg)] text-[var(--wait-good-text)]'
       : hospital.status === 'mid'
-      ? 'bg-[var(--wait-mid-bg)] text-[var(--wait-mid-text)]'
-      : 'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)]';
+        ? 'bg-[var(--wait-mid-bg)] text-[var(--wait-mid-text)]'
+        : 'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)]';
 
   return (
     <article
@@ -1144,11 +1277,10 @@ function HospitalSheetDetails({ hospital, travelMode, onClose, onJoin, onToggleS
                 <div>
                   <span className="font-bold text-xs text-[var(--ink)] block">{dept.name}</span>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold tnum ${
-                      status === 'good' ? 'bg-[var(--wait-good-bg)] text-[var(--wait-good-text)]' :
-                      status === 'mid' ? 'bg-[var(--wait-mid-bg)] text-[var(--wait-mid-text)]' :
-                      'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)]'
-                    }`}>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold tnum ${status === 'good' ? 'bg-[var(--wait-good-bg)] text-[var(--wait-good-text)]' :
+                        status === 'mid' ? 'bg-[var(--wait-mid-bg)] text-[var(--wait-mid-text)]' :
+                          'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)]'
+                      }`}>
                       {dept.eta.low}–{dept.eta.high} min
                     </span>
                     <span className="text-[10px] text-[var(--ink-faint)]">
@@ -1170,28 +1302,35 @@ function HospitalSheetDetails({ hospital, travelMode, onClose, onJoin, onToggleS
         </div>
       </div>
 
-      {/* Directions action */}
-      <a
-        href={directionsUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="touch-target w-full py-2.5 rounded-2xl border border-[var(--border)] hover:bg-[var(--surface-2)] text-xs font-bold flex items-center justify-center gap-2 text-[var(--ink)]"
-      >
-        <CornerUpRight size={15} /> Directions in Maps
-      </a>
+      {/* Actions */}
+      <div className="flex flex-col gap-2 pt-1">
+        <Link
+          to={`/hospital/${hospital.id}`}
+          className="touch-target w-full py-2.5 rounded-2xl border border-[var(--border)] hover:bg-[var(--surface-2)] text-xs font-bold flex items-center justify-center gap-2 text-[var(--brand)] transition-colors"
+        >
+          View Full Hospital Page
+        </Link>
+        <a
+          href={directionsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="touch-target w-full py-2.5 rounded-2xl border border-[var(--border)] hover:bg-[var(--surface-2)] text-xs font-bold flex items-center justify-center gap-2 text-[var(--ink)] transition-colors"
+        >
+          <CornerUpRight size={15} /> Directions in Maps
+        </a>
+      </div>
     </div>
   );
 }
 
 // ───────────── MapLibre Component with Cleanup & Handlers ─────────────
-function MapComponent({
+const MapComponent = React.memo(function MapComponent({
   hospitals,
   selectedId,
   onSelectHospital,
   userLocation,
   isPinMode,
   onPinPlaced,
-  mapStyle,
   resolvedTheme,
   isSidebarCollapsed,
   sheetSnap,
@@ -1201,16 +1340,22 @@ function MapComponent({
   const markersRef = useRef(new Map());
   const userMarkerRef = useRef(null);
   const hasInitialFitRef = useRef(false);
+  const currentThemeRef = useRef(resolvedTheme);
 
-  // Initialize MapLibre
+  // Initialize MapLibre ONCE on mount
   useEffect(() => {
     if (!containerRef.current) return;
 
     let mapInstance;
+    let resizeTimer = null;
+    let ro = null;
+
+    const initialStyle = resolvedTheme === 'dark' ? OPENFREEMAP_STYLES.dark : OPENFREEMAP_STYLES.bright;
+
     try {
       mapInstance = new maplibregl.Map({
         container: containerRef.current,
-        style: mapStyle,
+        style: initialStyle,
         center: [DEMO_HOME.lng, DEMO_HOME.lat],
         zoom: 11.8,
         attributionControl: false,
@@ -1234,25 +1379,64 @@ function MapComponent({
       });
 
       mapRef.current = mapInstance;
+
+      // Debounced ResizeObserver: Prevents WebGL framebuffer thrashing & flickering during CSS transitions
+      ro = new ResizeObserver(() => {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          mapInstance?.resize();
+        }, 120);
+      });
+      ro.observe(containerRef.current);
     } catch (err) {
       console.error('Failed to initialize map:', err);
       notify.error('Could not render interactive map. Showing list view.');
     }
 
-    const ro = new ResizeObserver(() => {
-      mapInstance?.resize();
-    });
-    ro.observe(containerRef.current);
-
     return () => {
-      ro.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
+      ro?.disconnect();
       markersRef.current.forEach((m) => m.marker.remove());
       markersRef.current.clear();
       userMarkerRef.current?.remove();
       mapInstance?.remove();
       mapRef.current = null;
     };
-  }, [mapStyle]);
+  }, []);
+
+  // Dynamic Basemap Switch: Smoothly switch between OpenFreeMap bright and dark without recreating Map or losing WebGL context
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (currentThemeRef.current !== resolvedTheme) {
+      currentThemeRef.current = resolvedTheme;
+      const targetStyle = resolvedTheme === 'dark' ? OPENFREEMAP_STYLES.dark : OPENFREEMAP_STYLES.bright;
+      map.setStyle(targetStyle);
+    }
+  }, [resolvedTheme]);
+
+  // Re-anchor user marker when basemap style data loads
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const onStyleData = () => {
+      if (
+        userMarkerRef.current &&
+        userLocation &&
+        typeof userLocation.lng === 'number' &&
+        typeof userLocation.lat === 'number'
+      ) {
+        userMarkerRef.current.setLngLat([userLocation.lng, userLocation.lat]);
+      }
+    };
+
+    map.on('styledata', onStyleData);
+    return () => {
+      map.off('styledata', onStyleData);
+    };
+  }, [userLocation]);
 
   // Click on map when pin mode is toggled
   useEffect(() => {
@@ -1260,7 +1444,7 @@ function MapComponent({
     mapRef.current.getCanvas().style.cursor = isPinMode ? 'crosshair' : '';
   }, [isPinMode]);
 
-  // Handle map resizing after sidebar transition or sheet snap change
+  // Handle smooth map resize after sidebar transition settles (320ms)
   useEffect(() => {
     const timer = setTimeout(() => {
       mapRef.current?.resize();
@@ -1268,21 +1452,40 @@ function MapComponent({
     return () => clearTimeout(timer);
   }, [isSidebarCollapsed, sheetSnap]);
 
-  // Initial fitBounds once hospitals load
+  // Initial fitBounds once hospitals load safely without null coordinates
   useEffect(() => {
     const map = mapRef.current;
     if (!map || hospitals.length === 0 || hasInitialFitRef.current) return;
 
     const bounds = new maplibregl.LngLatBounds();
-    hospitals.forEach((h) => bounds.extend([h.lng, h.lat]));
-    if (userLocation) bounds.extend([userLocation.lng, userLocation.lat]);
+    let validCoords = 0;
 
-    map.fitBounds(bounds, {
-      padding: { top: 60, bottom: 60, left: 60, right: 60 },
-      maxZoom: 13.5,
-      duration: 800,
+    hospitals.forEach((h) => {
+      if (typeof h.lng === 'number' && typeof h.lat === 'number' && !isNaN(h.lng) && !isNaN(h.lat)) {
+        bounds.extend([h.lng, h.lat]);
+        validCoords++;
+      }
     });
-    hasInitialFitRef.current = true;
+
+    if (
+      userLocation &&
+      typeof userLocation.lng === 'number' &&
+      typeof userLocation.lat === 'number' &&
+      !isNaN(userLocation.lng) &&
+      !isNaN(userLocation.lat)
+    ) {
+      bounds.extend([userLocation.lng, userLocation.lat]);
+      validCoords++;
+    }
+
+    if (validCoords > 0 && !bounds.isEmpty()) {
+      map.fitBounds(bounds, {
+        padding: { top: 60, bottom: 60, left: 60, right: 60 },
+        maxZoom: 13.5,
+        duration: 800,
+      });
+      hasInitialFitRef.current = true;
+    }
   }, [hospitals, userLocation]);
 
   // Pan to selected hospital when clicked from list or marker
@@ -1291,7 +1494,7 @@ function MapComponent({
     if (!map || !selectedId) return;
 
     const target = hospitals.find((h) => h.id === selectedId);
-    if (target) {
+    if (target && typeof target.lng === 'number' && typeof target.lat === 'number' && !isNaN(target.lng) && !isNaN(target.lat)) {
       map.easeTo({ center: [target.lng, target.lat], zoom: Math.max(map.getZoom(), 13), duration: 500 });
     }
   }, [selectedId, hospitals]);
@@ -1314,6 +1517,10 @@ function MapComponent({
 
     // Add or update markers
     hospitals.forEach((h) => {
+      if (typeof h.lng !== 'number' || typeof h.lat !== 'number' || isNaN(h.lng) || isNaN(h.lat)) {
+        return;
+      }
+
       let markerObj = currentMarkers.get(h.id);
 
       if (!markerObj) {
@@ -1343,8 +1550,8 @@ function MapComponent({
       markerObj.pill.className = `nq-marker-pill ${isSelected ? 'selected' : ''}`;
       markerObj.pill.style.backgroundColor =
         h.status === 'good' ? 'var(--wait-good)' :
-        h.status === 'mid' ? 'var(--wait-mid)' :
-        'var(--wait-bad)';
+          h.status === 'mid' ? 'var(--wait-mid)' :
+            'var(--wait-bad)';
       markerObj.pill.style.color = '#ffffff';
 
       markerObj.pill.innerHTML = `<span>~${h.selectedDept?.eta?.mid || 15}m</span>`;
@@ -1357,7 +1564,7 @@ function MapComponent({
     const map = mapRef.current;
     if (!map) return;
 
-    if (!userLocation) {
+    if (!userLocation || typeof userLocation.lng !== 'number' || typeof userLocation.lat !== 'number' || isNaN(userLocation.lng) || isNaN(userLocation.lat)) {
       userMarkerRef.current?.remove();
       userMarkerRef.current = null;
       return;
@@ -1386,4 +1593,4 @@ function MapComponent({
       aria-label="Interactive hospital map"
     />
   );
-}
+});

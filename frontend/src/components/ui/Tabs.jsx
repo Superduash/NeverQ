@@ -19,7 +19,7 @@ export function Tabs({ tabs = [], activeTab, onChange, className = '' }) {
               touch-target flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all
               ${active
                 ? 'bg-[var(--surface)] text-[var(--brand)] shadow-xs font-bold'
-                : 'text-[var(--ink-faint)] hover:text-[var(--ink)]'}
+                : 'text-[var(--ink-muted)] hover:text-[var(--ink)]'}
             `}
           >
             {tab.icon && <span className="shrink-0">{tab.icon}</span>}

@@ -157,6 +157,9 @@ function RouteStub({ name, description }) {
 
 // ───────────── AppShell Layout with Transitions ─────────────
 const LandingLazy = lazy(() => import('./pages/Landing.jsx'));
+const HospitalViewLazy = lazy(() => import('./pages/HospitalView.jsx'));
+const JoinQueueLazy = lazy(() => import('./pages/JoinQueue.jsx'));
+const LiveTicketLazy = lazy(() => import('./pages/LiveTicket.jsx'));
 
 function AppShell() {
   const location = useLocation();
@@ -183,9 +186,9 @@ function AppShell() {
             {/* Customer Routes under CustomerLayout */}
             <Route element={<CustomerLayout />}>
               <Route path="/" element={<LandingLazy />} />
-              <Route path="/hospital/:orgId" element={<RouteStub name="Hospital View" />} />
-              <Route path="/join/:orgId/:deptId" element={<RouteStub name="Join Queue" />} />
-              <Route path="/t/:token" element={<RouteStub name="Live Ticket Status" />} />
+              <Route path="/hospital/:orgId" element={<HospitalViewLazy />} />
+              <Route path="/join/:orgId/:deptId" element={<JoinQueueLazy />} />
+              <Route path="/t/:token" element={<LiveTicketLazy />} />
               <Route path="/board/:orgId" element={<RouteStub name="Public Wait Board" />} />
             </Route>
 
@@ -220,11 +223,14 @@ function AppShell() {
 // ───────────── Root Bootstrap ─────────────
 const rootElement = document.getElementById('root');
 if (rootElement) {
-  createRoot(rootElement).render(
+  if (!window.__neverq_root) {
+    window.__neverq_root = createRoot(rootElement);
+  }
+  window.__neverq_root.render(
     <React.StrictMode>
       <ErrorBoundary>
         <ThemeProvider>
-          <BrowserRouter>
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <AppShell />
             <Toaster
               position="bottom-right"
