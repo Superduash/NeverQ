@@ -3,11 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>NeverQ — Hospital wait times and remote queue</title>
-    <meta name="description" content="See live hospital wait times on a map and join a queue remotely without logging in." />
-    <meta name="theme-color" content="#f4fbff" media="(prefers-color-scheme: light)" />
+    <title>NeverQ — Hospital Wait Times & Live Queue</title>
+    <meta name="description" content="See real-time hospital wait times on an interactive map and join queues remotely without login." />
+    
+    <!-- Theme color per media query -->
+    <meta name="theme-color" content="#0077b6" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#00111c" media="(prefers-color-scheme: dark)" />
     <meta name="color-scheme" content="light dark" />
+
+    <!-- PWA & Mobile Web App meta -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -16,37 +20,39 @@
     <link rel="icon" href="/logo.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 
+    <!-- Blocking theme resolution to prevent flash of wrong theme -->
     <script>
       (function () {
-        var root = document.documentElement;
         try {
-          var nqDark = localStorage.getItem("nq-dark");
-          var dark = nqDark === "1" || (nqDark !== "0" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
-          var mode = dark ? "dark" : "light";
-          root.setAttribute("data-theme", mode);
-          root.setAttribute("data-theme-pref", mode);
-          root.style.colorScheme = mode;
+          var root = document.documentElement;
+          var stored = localStorage.getItem("nq-theme");
+          var theme = stored === "dark" || stored === "light" ? stored : "system";
+          var isDark = theme === "dark" || (theme === "system" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var active = isDark ? "dark" : "light";
+          root.setAttribute("data-theme", active);
+          root.style.colorScheme = active;
           var metas = document.querySelectorAll('meta[name="theme-color"]');
           for (var i = 0; i < metas.length; i++) {
-            metas[i].setAttribute("content", dark ? "#00111c" : "#f4fbff");
+            metas[i].setAttribute("content", isDark ? "#00111c" : "#0077b6");
             metas[i].removeAttribute("media");
           }
         } catch (e) {
-          root.setAttribute("data-theme", "light");
-          root.style.colorScheme = "light";
+          document.documentElement.setAttribute("data-theme", "light");
+          document.documentElement.style.colorScheme = "light";
         }
       })();
     </script>
 
+    <!-- Google Fonts: Sora (headings) and Inter (body) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
   </head>
   <body>
-    <noscript>NeverQ needs JavaScript to run.</noscript>
+    <noscript>NeverQ requires JavaScript to run.</noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

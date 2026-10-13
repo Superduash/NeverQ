@@ -1,164 +1,193 @@
+
 @echo off
-setlocal enabledelayedexpansion
+setlocal EnableExtensions EnableDelayedExpansion
 title NeverQ Launcher
 
-:: 1. Always execute from the project root directory
 cd /d "%~dp0"
-
-echo ===================================================
-echo               NeverQ Launcher
-echo ===================================================
-
-:: 2. Check prerequisites (Node.js, npm, curl)
-where node >nul 2>nul
-if !ERRORLEVEL! neq 0 (
-    echo [ERROR] Node.js was not found in your system PATH.
-    echo Please install Node.js (v18 or higher) from https://nodejs.org/ and try again.
-    echo.
+if errorlevel 1 (
+    echo [ERROR] Could not access the project directory.
     pause
     exit /b 1
 )
 
-where npm >nul 2>nul
-if !ERRORLEVEL! neq 0 (
-    echo [ERROR] npm was not found in your system PATH.
-    echo Please ensure npm is installed and added to your system PATH.
-    echo.
-    pause
-    exit /b 1
+set "ROOT=%~dp0"
+set "BACKEND_URL=http://localhost:4000/api/health"
+set "FRONTEND_URL=http://localhost:5173/"
+set "MAX_RETRIES=30"
+
+echo.
+echo ===================================================
+echo                 NeverQ Launcher
+echo ===================================================
+echo.
+
+:: 1. Check prerequisites
+where node.exe >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Node.js was not found in PATH.
+    echo Install Node.js LTS from https://nodejs.org/
+    goto fatal_error
+)
+
+where npm.cmd >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] npm was not found in PATH.
+    echo Reinstall Node.js LTS and ensure npm is in PATH.
+    goto fatal_error
 )
 
 where curl.exe >nul 2>nul
-if !ERRORLEVEL! neq 0 (
-    echo [ERROR] curl.exe was not found in your system PATH.
-    echo curl is required to monitor service health.
-    echo.
-    pause
-    exit /b 1
+if errorlevel 1 (
+    echo [ERROR] curl.exe was not found in PATH.
+    goto fatal_error
 )
 
-:: 3. Install dependencies only if node_modules are missing
-if not exist "%~dp0backend\node_modules\" (
-    echo [*] Backend dependencies not found. Installing...
-    cd /d "%~dp0backend"
+:: 2. Check project directories
+if not exist "%ROOT%backend\package.json" (
+    echo [ERROR] backend\package.json was not found.
+    goto fatal_error
+)
+
+if not exist "%ROOT%frontend\package.json" (
+    echo [ERROR] frontend\package.json was not found.
+    goto fatal_error
+)
+
+:: 3. Install missing dependencies
+if not exist "%ROOT%backend\node_modules\" (
+    echo [1/4] Installing backend dependencies...
+    pushd "%ROOT%backend"
     call npm install
-    if !ERRORLEVEL! neq 0 (
-        echo.
-        echo [ERROR] Backend npm install failed.
-        cd /d "%~dp0"
-        pause
-        exit /b 1
+    set "INSTALL_RESULT=!ERRORLEVEL!"
+    popd
+
+    if not "!INSTALL_RESULT!"=="0" (
+        echo [ERROR] Backend dependency installation failed.
+        goto fatal_error
     )
-    cd /d "%~dp0"
 )
 
-if not exist "%~dp0frontend\node_modules\" (
-    echo [*] Frontend dependencies not found. Installing...
-    cd /d "%~dp0frontend"
+if not exist "%ROOT%frontend\node_modules\" (
+    echo [2/4] Installing frontend dependencies...
+    pushd "%ROOT%frontend"
     call npm install
-    if !ERRORLEVEL! neq 0 (
-        echo.
-        echo [ERROR] Frontend npm install failed.
-        cd /d "%~dp0"
-        pause
-        exit /b 1
+    set "INSTALL_RESULT=!ERRORLEVEL!"
+    popd
+
+    if not "!INSTALL_RESULT!"=="0" (
+        echo [ERROR] Frontend dependency installation failed.
+        goto fatal_error
     )
-    cd /d "%~dp0"
 )
 
-:: 4. Check Backend health status
-echo [*] Checking Backend status at http://localhost:4000/api/health...
-curl.exe -s -f -o nul "http://localhost:4000/api/health"
-if !ERRORLEVEL! equ 0 (
-    echo [*] Backend is already running and healthy.
+:: 4. Check or start backend
+echo.
+echo [3/4] Checking backend health...
+
+curl.exe --connect-timeout 2 --max-time 4 -s -f -o nul "%BACKEND_URL%" >nul 2>nul
+if not errorlevel 1 (
+    echo [OK] Backend is already healthy.
     goto check_frontend
 )
 
-:: Backend not running; launch in a separate persistent CMD window
-echo [*] Starting NeverQ Backend API on port 4000...
-start "NeverQ Backend API" /d "%~dp0backend" cmd /k npm run dev
+echo [*] Starting backend in a separate terminal...
+start "NeverQ Backend API" /D "%ROOT%backend" cmd.exe /k "npm run dev"
 
-echo [*] Waiting for Backend to become healthy...
-set /a BACKEND_RETRIES=0
-set /a MAX_BACKEND_RETRIES=30
+echo [*] Waiting for backend (up to approximately 60 seconds)...
+set /a RETRIES=0
 
 :poll_backend
-ping -n 2 127.0.0.1 >nul
-curl.exe -s -f -o nul "http://localhost:4000/api/health"
-if !ERRORLEVEL! equ 0 (
-    echo [*] Backend is healthy and responding.
+timeout /t 2 /nobreak >nul
+curl.exe --connect-timeout 2 --max-time 4 -s -f -o nul "%BACKEND_URL%" >nul 2>nul
+
+if not errorlevel 1 (
+    echo [OK] Backend is healthy.
     goto check_frontend
 )
-set /a BACKEND_RETRIES+=1
-if !BACKEND_RETRIES! geq !MAX_BACKEND_RETRIES! goto backend_timeout
+
+set /a RETRIES+=1
+if !RETRIES! geq !MAX_RETRIES! goto backend_timeout
 goto poll_backend
 
 :backend_timeout
 echo.
-echo [WARNING] Backend did not respond at http://localhost:4000/api/health within !MAX_BACKEND_RETRIES! seconds.
-echo           Please check the "NeverQ Backend API" window for startup logs or errors.
-echo           Proceeding to check frontend...
+echo [ERROR] Backend did not become healthy in time.
+echo Check the "NeverQ Backend API" terminal for errors.
+echo The frontend will not be launched without a healthy backend.
 echo.
-goto check_frontend
+goto fatal_error
 
-:: 5. Check Frontend status
+:: 5. Check or start frontend
 :check_frontend
-echo [*] Checking Frontend status at http://localhost:5173/...
-curl.exe -s -f -o nul "http://localhost:5173/"
-if !ERRORLEVEL! equ 0 (
-    echo [*] Frontend is already running and responding.
+echo.
+echo [4/4] Checking frontend...
+
+curl.exe --connect-timeout 2 --max-time 4 -s -f -o nul "%FRONTEND_URL%" >nul 2>nul
+if not errorlevel 1 (
+    echo [OK] Frontend is already responding.
     goto frontend_ready
 )
 
-:: Frontend not running; launch in a separate persistent CMD window
-echo [*] Starting NeverQ Frontend on port 5173...
-start "NeverQ Frontend" /d "%~dp0frontend" cmd /k npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+echo [*] Starting frontend in a separate terminal...
+start "NeverQ Frontend" /D "%ROOT%frontend" cmd.exe /k "npm run dev -- --host 127.0.0.1 --port 5173 --strictPort"
 
-echo [*] Waiting for Frontend to become ready...
-set /a FRONTEND_RETRIES=0
-set /a MAX_FRONTEND_RETRIES=30
+echo [*] Waiting for frontend (up to approximately 60 seconds)...
+set /a RETRIES=0
 
 :poll_frontend
-ping -n 2 127.0.0.1 >nul
-curl.exe -s -f -o nul "http://localhost:5173/"
-if !ERRORLEVEL! equ 0 (
-    echo [*] Frontend is ready and responding.
+timeout /t 2 /nobreak >nul
+curl.exe --connect-timeout 2 --max-time 4 -s -f -o nul "%FRONTEND_URL%" >nul 2>nul
+
+if not errorlevel 1 (
+    echo [OK] Frontend is responding.
     goto frontend_ready
 )
-set /a FRONTEND_RETRIES+=1
-if !FRONTEND_RETRIES! geq !MAX_FRONTEND_RETRIES! goto frontend_timeout
+
+set /a RETRIES+=1
+if !RETRIES! geq !MAX_RETRIES! goto frontend_timeout
 goto poll_frontend
 
 :frontend_timeout
 echo.
 echo ===================================================
-echo [ERROR] Frontend failed to respond at http://localhost:5173/
-echo         within !MAX_FRONTEND_RETRIES! seconds.
+echo [ERROR] Frontend failed to start.
+echo Browser will NOT be opened.
 echo.
-echo         Please check the "NeverQ Frontend" terminal window
-echo         for compilation errors, port conflicts, or startup logs.
-echo         The browser will NOT be opened.
+echo Check the "NeverQ Frontend" terminal for:
+echo - Vite compilation errors
+echo - Missing dependencies
+echo - Port 5173 conflicts
+echo - Invalid environment configuration
 echo ===================================================
 echo.
-pause
-exit /b 1
+goto fatal_error
 
+:: 6. Open browser only after frontend responds
 :frontend_ready
-echo [*] Opening default browser to http://localhost:5173/ ...
-start "" "http://localhost:5173/"
+echo.
+echo [*] Opening NeverQ in your default browser...
+start "" "%FRONTEND_URL%"
 
 echo.
 echo ===================================================
-echo               NeverQ is up and running!
+echo            NeverQ is running!
 echo ===================================================
-echo   Backend API : http://localhost:4000
-echo   Health Check: http://localhost:4000/api/health
-echo   Frontend App: http://localhost:5173/
-echo ===================================================
-echo   To stop the services:
-echo   - Close the respective backend and frontend terminal windows,
-echo     or press Ctrl+C inside each window.
+echo Backend : http://localhost:4000
+echo Health  : %BACKEND_URL%
+echo Frontend: %FRONTEND_URL%
+echo.
+echo Services run in separate terminal windows.
+echo Press Ctrl+C in each service window to stop it.
+echo No stop.bat is required.
 echo ===================================================
 echo.
 pause
 exit /b 0
+
+:fatal_error
+echo.
+echo Launcher stopped because of an error.
+echo Check the messages above before trying again.
+echo.
+pause
+exit /b 1
