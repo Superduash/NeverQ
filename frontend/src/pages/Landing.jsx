@@ -26,7 +26,7 @@ import {
 } from '../components/ui/index.js';
 
 const OPENFREEMAP_STYLES = {
-  bright: import.meta.env.VITE_MAP_STYLE_BRIGHT || 'https://tiles.openfreemap.org/styles/bright',
+  liberty: import.meta.env.VITE_MAP_STYLE || 'https://tiles.openfreemap.org/styles/liberty',
   dark: import.meta.env.VITE_MAP_STYLE_DARK || 'https://tiles.openfreemap.org/styles/dark',
 };
 
@@ -906,6 +906,88 @@ export default function Landing() {
             sheetSnap={sheetSnap}
           />
 
+          {/* Pin Mode Map Overlay Hint */}
+          {isPinMode && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-[var(--surface)] border-2 border-[var(--brand)] text-[var(--ink)] shadow-[var(--shadow-lg)] text-xs font-bold">
+              <span className="w-2.5 h-2.5 rounded-full bg-[var(--brand)] animate-ping" />
+              <span>Click anywhere on the map to place origin pin</span>
+              <button
+                type="button"
+                onClick={() => setIsPinMode(false)}
+                className="ml-2 px-2.5 py-1 rounded-xl bg-[var(--surface-2)] hover:bg-[var(--surface)] text-[var(--ink-muted)] text-[11px] font-semibold border border-[var(--border)] transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {/* Desktop Floating Hospital Quick Card over Map */}
+          {selectedHospital && (
+            <div className="hidden lg:flex absolute top-4 left-4 z-20 w-80 bg-[var(--surface)]/95 backdrop-blur-md border border-[var(--border)] rounded-2xl shadow-[var(--shadow-sheet)] p-4 flex-col gap-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-heading font-extrabold text-sm text-[var(--ink)] truncate">
+                      {selectedHospital.name}
+                    </h3>
+                    {selectedHospital.demo && <Badge variant="demo" size="sm">DEMO</Badge>}
+                  </div>
+                  <p className="text-[11px] text-[var(--ink-faint)] truncate mt-0.5">{selectedHospital.address}</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => toggleSave(selectedHospital.id, selectedHospital.name, e)}
+                    className="p-1 rounded-lg hover:bg-[var(--surface-2)] text-[var(--ink-faint)]"
+                    aria-label="Save hospital"
+                  >
+                    <Star size={16} className={selectedHospital.isSaved ? 'fill-[var(--accent-2)] text-[var(--accent-2)]' : ''} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedHospitalId(null)}
+                    className="p-1 rounded-lg hover:bg-[var(--surface-2)] text-[var(--ink-faint)]"
+                    aria-label="Close card"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2 rounded-xl bg-[var(--surface-2)]">
+                  <span className="text-[10px] text-[var(--ink-faint)] block">Wait Estimate</span>
+                  <span className="font-bold text-[var(--ink)] tnum">
+                    {selectedHospital.selectedDept?.eta?.low}–{selectedHospital.selectedDept?.eta?.high}m
+                  </span>
+                </div>
+                <div className="p-2 rounded-xl bg-[var(--surface-2)]">
+                  <span className="text-[10px] text-[var(--ink-faint)] block">Travel ({travelMode})</span>
+                  <span className="font-bold text-[var(--brand)] tnum">
+                    ~{selectedHospital.travelMin}m ({selectedHospital.distanceKm} km)
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1 border-t border-[var(--border)]/60">
+                <Link
+                  to={`/hospital/${selectedHospital.id}`}
+                  className="touch-target flex-1 py-2 rounded-xl border border-[var(--border)] hover:bg-[var(--surface-2)] text-xs font-bold text-center text-[var(--ink)] transition-colors"
+                >
+                  Details
+                </Link>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="flex-1"
+                  onClick={() => navigate(`/join/${selectedHospital.id}/${selectedHospital.selectedDept?.id || 'gen'}`)}
+                >
+                  Join Queue
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* ───────────── Mobile Bottom Sheet ───────────── */}
           <div className="lg:hidden absolute inset-x-0 bottom-0 z-30 pointer-events-none">
             {selectedHospital ? (
@@ -1342,6 +1424,23 @@ const MapComponent = React.memo(function MapComponent({
   const userMarkerRef = useRef(null);
   const hasInitialFitRef = useRef(false);
   const currentThemeRef = useRef(resolvedTheme);
+  const isPinModeRef = useRef(isPinMode);
+  const onPinPlacedRef = useRef(onPinPlaced);
+  const onSelectHospitalRef = useRef(onSelectHospital);
+  const prevUserLocationRef = useRef(userLocation);
+
+  // Keep refs synchronized to avoid stale closures in MapLibre event listeners
+  useEffect(() => {
+    isPinModeRef.current = isPinMode;
+  }, [isPinMode]);
+
+  useEffect(() => {
+    onPinPlacedRef.current = onPinPlaced;
+  }, [onPinPlaced]);
+
+  useEffect(() => {
+    onSelectHospitalRef.current = onSelectHospital;
+  }, [onSelectHospital]);
 
   // Initialize MapLibre ONCE on mount
   useEffect(() => {
@@ -1351,7 +1450,7 @@ const MapComponent = React.memo(function MapComponent({
     let resizeTimer = null;
     let ro = null;
 
-    const initialStyle = resolvedTheme === 'dark' ? OPENFREEMAP_STYLES.dark : OPENFREEMAP_STYLES.bright;
+    const initialStyle = resolvedTheme === 'dark' ? OPENFREEMAP_STYLES.dark : OPENFREEMAP_STYLES.liberty;
 
     try {
       mapInstance = new maplibregl.Map({
@@ -1363,15 +1462,19 @@ const MapComponent = React.memo(function MapComponent({
       });
 
       mapInstance.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
-      mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+      mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }), 'top-right');
 
       mapInstance.on('load', () => {
         mapInstance.resize();
       });
 
       mapInstance.on('click', (e) => {
-        if (isPinMode && onPinPlaced) {
-          onPinPlaced({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+        if (isPinModeRef.current && onPinPlacedRef.current) {
+          onPinPlacedRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+          return;
+        }
+        if (onSelectHospitalRef.current) {
+          onSelectHospitalRef.current(null);
         }
       });
 
@@ -1387,7 +1490,7 @@ const MapComponent = React.memo(function MapComponent({
       };
       const onContextRestored = () => {
         console.info('Map WebGL context restored; restoring style.');
-        const currentTargetStyle = currentThemeRef.current === 'dark' ? OPENFREEMAP_STYLES.dark : OPENFREEMAP_STYLES.bright;
+        const currentTargetStyle = currentThemeRef.current === 'dark' ? OPENFREEMAP_STYLES.dark : OPENFREEMAP_STYLES.liberty;
         try {
           mapInstance.setStyle(currentTargetStyle, { diff: false });
         } catch (err) {
@@ -1409,8 +1512,7 @@ const MapComponent = React.memo(function MapComponent({
       });
       ro.observe(containerRef.current);
     } catch (err) {
-      console.error('Failed to initialize map:', err);
-      notify.error('Could not render interactive map. Showing list view.');
+      console.warn('MapLibre WebGL context error handled:', err);
     }
 
     return () => {
@@ -1418,20 +1520,23 @@ const MapComponent = React.memo(function MapComponent({
       ro?.disconnect();
       markersRef.current.forEach((m) => m.marker.remove());
       markersRef.current.clear();
-      userMarkerRef.current?.remove();
+      if (userMarkerRef.current) {
+        (userMarkerRef.current.marker || userMarkerRef.current).remove();
+        userMarkerRef.current = null;
+      }
       mapInstance?.remove();
       mapRef.current = null;
     };
   }, []);
 
-  // Dynamic Basemap Switch: Smoothly switch between OpenFreeMap bright and dark without recreating Map or losing WebGL context
+  // Dynamic Basemap Switch: Smoothly switch between OpenFreeMap liberty and dark without recreating Map or losing WebGL context
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
     if (currentThemeRef.current !== resolvedTheme) {
       currentThemeRef.current = resolvedTheme;
-      const targetStyle = resolvedTheme === 'dark' ? OPENFREEMAP_STYLES.dark : OPENFREEMAP_STYLES.bright;
+      const targetStyle = resolvedTheme === 'dark' ? OPENFREEMAP_STYLES.dark : OPENFREEMAP_STYLES.liberty;
 
       const safeApplyStyle = () => {
         try {
@@ -1463,7 +1568,8 @@ const MapComponent = React.memo(function MapComponent({
         typeof userLocation.lng === 'number' &&
         typeof userLocation.lat === 'number'
       ) {
-        userMarkerRef.current.setLngLat([userLocation.lng, userLocation.lat]);
+        const m = userMarkerRef.current.marker || userMarkerRef.current;
+        m.setLngLat([userLocation.lng, userLocation.lat]);
       }
     };
 
@@ -1473,10 +1579,21 @@ const MapComponent = React.memo(function MapComponent({
     };
   }, [userLocation]);
 
-  // Click on map when pin mode is toggled
+  // Cursor indicator when pin mode is toggled
   useEffect(() => {
-    if (!mapRef.current) return;
-    mapRef.current.getCanvas().style.cursor = isPinMode ? 'crosshair' : '';
+    const map = mapRef.current;
+    if (!map) return;
+    try {
+      const canvas = map.getCanvas();
+      if (canvas) {
+        canvas.style.cursor = isPinMode ? 'crosshair' : '';
+      }
+      if (containerRef.current) {
+        containerRef.current.style.cursor = isPinMode ? 'crosshair' : '';
+      }
+    } catch (err) {
+      console.warn('Could not update map cursor:', err);
+    }
   }, [isPinMode]);
 
   // Handle smooth map resize after sidebar transition settles (320ms)
@@ -1523,6 +1640,25 @@ const MapComponent = React.memo(function MapComponent({
     }
   }, [hospitals, userLocation]);
 
+  // Smoothly center on user location when placed, dragged, or preset selected (after initial load)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !hasInitialFitRef.current || !userLocation) return;
+    if (
+      typeof userLocation.lng === 'number' &&
+      typeof userLocation.lat === 'number' &&
+      (prevUserLocationRef.current?.lat !== userLocation.lat ||
+       prevUserLocationRef.current?.lng !== userLocation.lng)
+    ) {
+      prevUserLocationRef.current = userLocation;
+      map.flyTo({
+        center: [userLocation.lng, userLocation.lat],
+        zoom: Math.max(map.getZoom(), 12.8),
+        duration: 700,
+      });
+    }
+  }, [userLocation]);
+
   // Pan to selected hospital when clicked from list or marker
   useEffect(() => {
     const map = mapRef.current;
@@ -1534,7 +1670,7 @@ const MapComponent = React.memo(function MapComponent({
     }
   }, [selectedId, hospitals]);
 
-  // Update Hospital Markers (isolated wrapper + compact pill)
+  // Update Hospital Markers (isolated wrapper + compact pill with name)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -1568,7 +1704,13 @@ const MapComponent = React.memo(function MapComponent({
 
         wrapper.addEventListener('click', (e) => {
           e.stopPropagation();
-          onSelectHospital(h.id);
+          if (isPinModeRef.current && onPinPlacedRef.current) {
+            onPinPlacedRef.current({ lat: h.lat, lng: h.lng });
+            return;
+          }
+          if (onSelectHospitalRef.current) {
+            onSelectHospitalRef.current(h.id);
+          }
         });
 
         const marker = new maplibregl.Marker({ element: wrapper, anchor: 'center' })
@@ -1589,35 +1731,73 @@ const MapComponent = React.memo(function MapComponent({
             'var(--wait-bad)';
       markerObj.pill.style.color = '#ffffff';
 
-      markerObj.pill.innerHTML = `<span>~${h.selectedDept?.eta?.mid || 15}m</span>`;
+      const shortName = h.name.replace(/ Hospital| Multi-speciality| Clinic/gi, '').trim();
+      markerObj.pill.innerHTML = `
+        <span class="nq-pill-time">~${h.selectedDept?.eta?.mid || 15}m</span>
+        <span class="nq-pill-name">${shortName}</span>
+      `;
       markerObj.wrapper.style.zIndex = isSelected ? '20' : '1';
+      markerObj.wrapper.setAttribute('title', `${h.name} • ~${h.selectedDept?.eta?.mid || 15}m wait`);
     });
-  }, [hospitals, selectedId, onSelectHospital]);
+  }, [hospitals, selectedId]);
 
-  // Update User Location Dot
+  // Update User Location Marker (Draggable Pin & Pulsing Beacon)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
     if (!userLocation || typeof userLocation.lng !== 'number' || typeof userLocation.lat !== 'number' || isNaN(userLocation.lng) || isNaN(userLocation.lat)) {
-      userMarkerRef.current?.remove();
-      userMarkerRef.current = null;
+      if (userMarkerRef.current) {
+        (userMarkerRef.current.marker || userMarkerRef.current).remove();
+        userMarkerRef.current = null;
+      }
       return;
     }
 
     if (!userMarkerRef.current) {
       const wrapper = document.createElement('div');
-      wrapper.className = 'nq-marker-container';
+      wrapper.className = 'nq-user-marker';
+      wrapper.setAttribute('title', 'Your Origin Pin (Drag to reposition)');
 
-      const dot = document.createElement('div');
-      dot.className = 'nq-user-dot';
-      wrapper.appendChild(dot);
+      const badge = document.createElement('div');
+      badge.className = 'nq-user-badge';
+      badge.innerHTML = `<span>📍</span><span>${userLocation.label || 'Your Location'}</span>`;
+      wrapper.appendChild(badge);
 
-      userMarkerRef.current = new maplibregl.Marker({ element: wrapper, anchor: 'center' })
+      const pinWrap = document.createElement('div');
+      pinWrap.className = 'nq-user-pin-wrap';
+
+      const pulse = document.createElement('div');
+      pulse.className = 'nq-user-pulse';
+      pinWrap.appendChild(pulse);
+
+      const pinIcon = document.createElement('div');
+      pinIcon.className = 'nq-user-pin-icon';
+
+      const inner = document.createElement('div');
+      inner.className = 'nq-user-pin-inner';
+      pinIcon.appendChild(inner);
+
+      pinWrap.appendChild(pinIcon);
+      wrapper.appendChild(pinWrap);
+
+      const marker = new maplibregl.Marker({ element: wrapper, anchor: 'bottom', draggable: true })
         .setLngLat([userLocation.lng, userLocation.lat])
         .addTo(map);
+
+      marker.on('dragend', () => {
+        const lngLat = marker.getLngLat();
+        if (onPinPlacedRef.current) {
+          onPinPlacedRef.current({ lat: lngLat.lat, lng: lngLat.lng });
+        }
+      });
+
+      userMarkerRef.current = { marker, wrapper, badge };
     } else {
-      userMarkerRef.current.setLngLat([userLocation.lng, userLocation.lat]);
+      userMarkerRef.current.marker.setLngLat([userLocation.lng, userLocation.lat]);
+      if (userMarkerRef.current.badge) {
+        userMarkerRef.current.badge.innerHTML = `<span>📍</span><span>${userLocation.label || 'Your Location'}</span>`;
+      }
     }
   }, [userLocation]);
 

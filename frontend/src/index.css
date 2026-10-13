@@ -445,21 +445,119 @@ select option {
   z-index: 20 !important;
 }
 
-/* User Location Dot */
-.nq-user-dot {
-  width: 18px !important;
-  height: 18px !important;
-  min-width: 18px !important;
-  min-height: 18px !important;
-  max-width: 18px !important;
-  max-height: 18px !important;
-  flex: none !important;
-  border-radius: 50% !important;
-  background: #3b82f6 !important;
-  border: 3px solid #ffffff !important;
-  box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.35), 0 4px 10px rgba(0, 0, 0, 0.3) !important;
-  box-sizing: border-box !important;
-  pointer-events: none !important;
+/* User Location Marker & Draggable Origin Pin */
+.nq-user-marker {
+  position: relative;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  cursor: grab;
+  z-index: 50 !important;
+  user-select: none;
+  pointer-events: auto !important;
+  transition: transform 0.15s ease;
+}
+
+.nq-user-marker:hover {
+  transform: translateY(-2px) scale(1.05);
+}
+
+.nq-user-marker:active {
+  cursor: grabbing;
+  transform: translateY(-4px) scale(1.1);
+}
+
+.nq-user-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  margin-bottom: 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  border: 1.5px solid var(--border-strong);
+  letter-spacing: -0.01em;
+}
+
+.nq-user-pin-wrap {
+  position: relative;
+  width: 30px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nq-user-pin-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 0;
+}
+
+[data-theme="dark"] .nq-user-pin-icon {
+  border-color: #0f172a;
+  background: linear-gradient(135deg, #60a5fa, #2563eb);
+}
+
+.nq-user-pin-inner {
+  width: 9px;
+  height: 9px;
+  background: #ffffff;
+  border-radius: 50%;
+  transform: rotate(45deg);
+}
+
+.nq-user-pulse {
+  position: absolute;
+  bottom: 0px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 8px;
+  background: rgba(59, 130, 246, 0.4);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: nqPulseShadow 2s infinite ease-out;
+}
+
+@keyframes nqPulseShadow {
+  0% { transform: translateX(-50%) scale(0.6); opacity: 0.9; }
+  100% { transform: translateX(-50%) scale(2.4); opacity: 0; }
+}
+
+/* Enhanced Hospital Pill Marker Styling */
+.nq-marker-pill .nq-pill-time {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.nq-marker-pill .nq-pill-name {
+  font-weight: 600;
+  font-size: 11px;
+  max-width: 105px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.95;
+  border-left: 1px solid rgba(255, 255, 255, 0.4);
+  padding-left: 6px;
+  margin-left: 3px;
 }
 
 /* No scrollbar utility */

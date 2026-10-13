@@ -25,7 +25,7 @@ import {
   isAlertsUnlocked, acquireWakeLock, releaseWakeLock, stopTabTitleFlash
 } from '../lib/alerts.js';
 
-const DEFAULT_MAP_STYLE = import.meta.env.VITE_MAP_STYLE || 'https://tiles.openfreemap.org/styles/bright';
+const DEFAULT_MAP_STYLE = import.meta.env.VITE_MAP_STYLE || 'https://tiles.openfreemap.org/styles/liberty';
 
 export default function LiveTicket() {
   const { token: routeToken } = useParams();
@@ -891,6 +891,22 @@ function MiniMap({ org, userLocation }) {
   useEffect(() => {
     if (!containerRef.current || !org) return;
 
+    // Check WebGL availability before instantiating MapLibre
+    let isGlSupported = false;
+    try {
+      if (maplibregl.supported && maplibregl.supported()) {
+        const testCanvas = document.createElement('canvas');
+        isGlSupported = Boolean(
+          testCanvas.getContext('webgl', { failIfMajorPerformanceCaveat: false }) ||
+          testCanvas.getContext('experimental-webgl', { failIfMajorPerformanceCaveat: false })
+        );
+      }
+    } catch (e) {
+      isGlSupported = false;
+    }
+
+    if (!isGlSupported) return;
+
     let map;
     try {
       map = new maplibregl.Map({
@@ -914,7 +930,7 @@ function MiniMap({ org, userLocation }) {
           .addTo(map);
       }
     } catch (e) {
-      console.warn('MiniMap rendering skipped:', e);
+      console.warn('MiniMap WebGL unavailable:', e);
     }
 
     return () => {
@@ -922,5 +938,12 @@ function MiniMap({ org, userLocation }) {
     };
   }, [org, userLocation]);
 
-  return <div ref={containerRef} className="w-full h-full bg-[var(--surface-2)]" />;
+  return (
+    <div ref={containerRef} className="w-full h-full bg-[var(--surface-2)] flex items-center justify-center text-xs text-[var(--ink-faint)]">
+      <span className="flex items-center gap-1.5 opacity-75">
+        <MapPin size={14} className="text-[var(--brand)]" />
+        <span>{org?.area || 'Clinic location'}</span>
+      </span>
+    </div>
+  );
 }
