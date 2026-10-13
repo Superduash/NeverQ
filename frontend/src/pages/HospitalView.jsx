@@ -13,6 +13,7 @@ import { shareLink } from '../lib/utils.js';
 import {
   Button, IconButton, Badge, Segmented, Skeleton, ErrorState
 } from '../components/ui/index.js';
+import { MapView } from '../components/map/index.js';
 
 export default function HospitalView() {
   const { orgId } = useParams();
@@ -176,6 +177,21 @@ export default function HospitalView() {
           </a>
         </div>
       </div>
+
+      {/* Hospital Location Interactive Map Preview */}
+      {typeof hospital.lat === 'number' && typeof hospital.lng === 'number' && (
+        <div className="rounded-3xl overflow-hidden border border-[var(--border)] shadow-xs h-48 sm:h-56 relative">
+          <MapView
+            markers={[hospital]}
+            selected={hospital.id}
+            user={DEMO_HOME}
+            mode="browse"
+            interactive={true}
+            center={[hospital.lng, hospital.lat]}
+            zoom={13.2}
+          />
+        </div>
+      )}
 
       {/* Departments Live Queues Section */}
       <div className="flex flex-col gap-3">

@@ -13,6 +13,7 @@ import {
   Button, IconButton, Badge, Segmented, ConfirmDialog,
   Skeleton, EmptyState
 } from '../components/ui/index.js';
+import { MapView } from '../components/map/index.js';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -832,7 +833,7 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
                 type="number"
                 step="any"
                 value={lat}
-                onChange={(e) => setLat(e.target.value)}
+                onChange={(e) => setLat(Number(e.target.value))}
                 placeholder="Latitude"
                 className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)] font-bold tnum"
               />
@@ -840,9 +841,24 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
                 type="number"
                 step="any"
                 value={lng}
-                onChange={(e) => setLng(e.target.value)}
+                onChange={(e) => setLng(Number(e.target.value))}
                 placeholder="Longitude"
                 className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)] font-bold tnum"
+              />
+            </div>
+
+            {/* Interactive Map Pin Picker (Phase A.1 & A.7 mode="pick") */}
+            <div className="rounded-2xl overflow-hidden border border-[var(--border)] h-40 sm:h-44 relative mt-1.5">
+              <MapView
+                mode="pick"
+                center={[Number(lng) || 80.2450, Number(lat) || 13.0450]}
+                user={{ lat: Number(lat) || 13.0450, lng: Number(lng) || 80.2450, label: name || 'Hospital Pin' }}
+                onPick={(coords) => {
+                  setLat(Number(coords.lat.toFixed(5)));
+                  setLng(Number(coords.lng.toFixed(5)));
+                }}
+                interactive={true}
+                zoom={13}
               />
             </div>
           </div>

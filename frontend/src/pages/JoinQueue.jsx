@@ -11,7 +11,7 @@ import { NOTIFICATION_MESSAGES } from '../lib/messages.js';
 import { useDeviceId } from '../lib/utils.js';
 import {
   Button, Input, PhoneInput, Select, RadioCard,
-  Banner, Skeleton, ErrorState
+  Banner, Skeleton, ErrorState, Badge
 } from '../components/ui/index.js';
 
 export default function JoinQueue() {

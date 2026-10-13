@@ -445,27 +445,16 @@ select option {
   z-index: 20 !important;
 }
 
-/* User Location Marker & Draggable Origin Pin */
+/* User Location Marker & Origin Pin (Locked, non-draggable to prevent accidental drags during map pan) */
 .nq-user-marker {
   position: relative;
   display: flex !important;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  cursor: grab;
   z-index: 50 !important;
   user-select: none;
-  pointer-events: auto !important;
-  transition: transform 0.15s ease;
-}
-
-.nq-user-marker:hover {
-  transform: translateY(-2px) scale(1.05);
-}
-
-.nq-user-marker:active {
-  cursor: grabbing;
-  transform: translateY(-4px) scale(1.1);
+  pointer-events: none !important;
 }
 
 .nq-user-badge {
@@ -589,5 +578,21 @@ select option {
   }
   .marker-pulse {
     animation: none !important;
+  }
+}
+
+/* ───────────── Sonner Toaster Overrides & Safe Areas (Phase B.1) ───────────── */
+[data-sonner-toaster] {
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important;
+  right: calc(16px + env(safe-area-inset-right, 0px)) !important;
+  z-index: 9999 !important;
+}
+
+@media (max-width: 640px) {
+  [data-sonner-toaster] {
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+    left: 12px !important;
+    right: 12px !important;
+    width: auto !important;
   }
 }

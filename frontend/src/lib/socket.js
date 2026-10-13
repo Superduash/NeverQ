@@ -22,10 +22,13 @@ class SocketManager {
   }
 
   initRealSocket() {
+    const staffToken = localStorage.getItem('nq-staff-token');
     this.socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      auth: staffToken ? { token: staffToken } : undefined,
     });
 
     this.socket.on('connect', () => {
@@ -138,6 +141,17 @@ export function useLiveData(fetcher, { room, event = 'queue:update', interval = 
     }, interval);
     return () => clearInterval(timer);
   }, [interval, isOnline, load]);
+
+  // Visibility change refetch (tab reactivation)
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && isOnline) {
+        load();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [load, isOnline]);
 
   return { data, loading, error, refresh: load };
 }

@@ -25,11 +25,25 @@ async function request(endpoint, options = {}) {
     headers['Authorization'] = `Bearer ${staffToken}`;
   }
 
+  // Phase D.4: Render cold-start detection (>3s triggers waking server notice)
+  let wakeTimer = null;
+  if (!USE_MOCK) {
+    wakeTimer = setTimeout(() => {
+      notify.info('Waking up the server... Free hosting instances may take 15–30s to start.', {
+        id: 'nq-waking-server',
+        duration: 20000,
+      });
+    }, 3000);
+  }
+
   try {
     const res = await fetch(url, {
       ...options,
       headers,
     });
+
+    if (wakeTimer) clearTimeout(wakeTimer);
+    notify.dismiss('nq-waking-server');
 
     if (res.status === 401) {
       // 401 Unauthorized handler
@@ -56,6 +70,8 @@ async function request(endpoint, options = {}) {
 
     return data;
   } catch (err) {
+    if (wakeTimer) clearTimeout(wakeTimer);
+    notify.dismiss('nq-waking-server');
     if (err.status) throw err;
     throw {
       status: 0,
@@ -142,22 +158,63 @@ export const api = {
     });
   },
 
-  // POST /api/travel {from, to, mode}
-  getTravel: async ({ from, to, mode }) => {
-    if (USE_MOCK) {
-      const rush = mockEngine.db?.settings?.rushFactor || 1;
-      const baseMin = 12;
+  // POST /api/travel {from, to, mode} (Phase A.4 with 3s timeout)
+  travel: async ({ from, to, mode = 'car' }) => {
+    const rush = USE_MOCK ? (mockEngine.db?.settings?.rushFactor || 1) : 1;
+
+    // Timeout helper
+    const fetchWithTimeout = async () => {
+      if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 60));
+        const speed = mode === 'walk' ? 4.5 : mode === 'bike' ? 14 : 28;
+        // Haversine fallback estimate
+        const lat1 = from?.lat || 13.0827;
+        const lon1 = from?.lng || 80.2707;
+        const lat2 = to?.lat || 13.0450;
+        const lon2 = to?.lng || 80.2450;
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+          Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const km = Number((R * c).toFixed(1));
+        const minutes = Math.max(2, Math.round((km / speed) * 60 * rush));
+
+        return {
+          minutes,
+          km,
+          source: import.meta.env.VITE_ORS_ENABLED === 'true' ? 'route' : 'estimate',
+          label: 'approx.',
+        };
+      }
+
+      return request('/travel', {
+        method: 'POST',
+        body: JSON.stringify({ from, to, mode }),
+      });
+    };
+
+    // 3-second timeout race
+    try {
+      const result = await Promise.race([
+        fetchWithTimeout(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Travel timeout')), 3000)),
+      ]);
+      return result;
+    } catch {
+      // Fallback estimate
       return {
-        minutes: Math.round(baseMin * rush),
-        km: 3.8,
+        minutes: 15,
+        km: 3.5,
         source: 'estimate',
+        label: 'approx.',
       };
     }
-    return request('/travel', {
-      method: 'POST',
-      body: JSON.stringify({ from, to, mode }),
-    });
   },
+
+  getTravel: async (params) => api.travel(params),
 
   // ── Staff Endpoints ──
 

@@ -24,8 +24,7 @@ import {
   triggerCallAlert, triggerThrottledAlert, unlockAlerts,
   isAlertsUnlocked, acquireWakeLock, releaseWakeLock, stopTabTitleFlash
 } from '../lib/alerts.js';
-
-const DEFAULT_MAP_STYLE = import.meta.env.VITE_MAP_STYLE || 'https://tiles.openfreemap.org/styles/liberty';
+import { MapView } from '../components/map/index.js';
 
 export default function LiveTicket() {
   const { token: routeToken } = useParams();
@@ -572,6 +571,25 @@ export default function LiveTicket() {
               I'm Here
             </Button>
           </div>
+
+          {/* Mini Route Map Preview (Phase A.1 Ticket Mode) */}
+          {ticket?.org && typeof ticket.org.lat === 'number' && typeof ticket.org.lng === 'number' && (
+            <div className="rounded-2xl overflow-hidden border border-[var(--border)] h-36 sm:h-40 relative mt-1">
+              <MapView
+                markers={[ticket.org]}
+                selected={ticket.org.id}
+                user={userLocation || DEMO_HOME}
+                mode="ticket"
+                interactive={true}
+                route={[
+                  [(userLocation || DEMO_HOME).lng, (userLocation || DEMO_HOME).lat],
+                  [ticket.org.lng, ticket.org.lat],
+                ]}
+                center={[ticket.org.lng, ticket.org.lat]}
+                zoom={12.5}
+              />
+            </div>
+          )}
 
           {arriveError && (
             <p className="text-[11px] text-[var(--danger)] mt-1 font-medium">
