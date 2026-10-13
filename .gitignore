@@ -2,20 +2,28 @@
 node_modules/
 /.pnp
 .pnp.js
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
 
-# Environment variables
+# Environment variables & secrets (keep .env.example)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
 *.env
 !.env.example
 
-# Build outputs
+# Build outputs & bundler caches
 dist/
 dist-ssr/
 build/
+out/
+.cache/
+.parcel-cache/
+.vite/
+.turbo/
+*.tsbuildinfo
+.eslintcache
 *.local
 
 # Logs
@@ -24,26 +32,51 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+*.log
 
-# Editor / OS
+# Editor & IDEs
 .vscode/*
 !.vscode/extensions.json
-.idea
+!.vscode/settings.json
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-.DS_Store
-Thumbs.db
+*.sublime-*
 
-# Documentation / specs / binary docs
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Python caches / virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+.venv/
+env/
+
+# Binary docs & prompt blueprints
 *.pdf
 FrontendQ.md
 *.md
 !README.md
+!BackendIntegrationRef.md
 
-# Exports / prompt dumps
+# Generated exports & prompt text dumps
 *.txt
 frontend.txt
 backend.txt
+codebase.txt
+export.txt
+
