@@ -373,8 +373,17 @@ select option {
 }
 
 [data-theme="dark"] .maplibregl-ctrl-attrib-button {
+  background-color: transparent !important;
   filter: invert(1) brightness(2) !important;
-  background-color: rgba(0, 26, 44, 0.92) !important;
+}
+
+[data-theme="dark"] .maplibregl-ctrl-attrib.maplibregl-compact {
+  background: rgba(0, 26, 44, 0.92) !important;
+}
+
+[data-theme="light"] .maplibregl-ctrl-attrib-button,
+:root:not([data-theme="dark"]) .maplibregl-ctrl-attrib-button {
+  background-color: transparent !important;
 }
 
 /* ───────────── MapLibre Marker Container & Pill Styling ───────────── */

@@ -19,76 +19,9 @@ import './index.css';
 // Re-export api and live hooks for backward and module compatibility
 export { api, useLiveData, useSocketRoom };
 
-// ───────────── Theme Context & Provider (Light & Dark Only) ─────────────
-export const ThemeContext = createContext({
-  theme: 'light',
-  resolvedTheme: 'light',
-  setTheme: () => {},
-});
-
-export function ThemeProvider({ children }) {
-  const [theme, setThemeState] = useState(() => {
-    const saved = storage.getTheme();
-    return saved === 'dark' ? 'dark' : 'light';
-  });
-
-  const applyTheme = useCallback((targetTheme) => {
-    const active = targetTheme === 'dark' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', active);
-    document.documentElement.style.colorScheme = active;
-
-    const metas = document.querySelectorAll('meta[name="theme-color"]');
-    metas.forEach((meta) => {
-      meta.setAttribute('content', active === 'dark' ? '#00111c' : '#0077b6');
-      meta.removeAttribute('media');
-    });
-  }, []);
-
-  const setTheme = (nextTheme) => {
-    const val = nextTheme === 'dark' ? 'dark' : 'light';
-    setThemeState(val);
-    storage.setTheme(val);
-    applyTheme(val);
-  };
-
-  useEffect(() => {
-    applyTheme(theme);
-  }, [theme, applyTheme]);
-
-  return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme: theme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  );
-}
-
-export const useTheme = () => useContext(ThemeContext);
-
-// ───────────── Theme Toggle Component (Light / Dark only) ─────────────
-export function ThemeToggle({ className = '' }) {
-  const { theme, setTheme } = useTheme();
-  const isDark = theme === 'dark';
-
-  const toggleTheme = () => {
-    setTheme(isDark ? 'light' : 'dark');
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={toggleTheme}
-      className={`touch-target p-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] text-[var(--ink)] hover:border-[var(--brand)] transition-colors ${className}`}
-      title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-      aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-    >
-      {isDark ? (
-        <Sun size={17} className="text-[var(--accent-2)]" />
-      ) : (
-        <Moon size={17} className="text-[var(--brand)]" />
-      )}
-    </button>
-  );
-}
+// Theme lives in lib/theme.jsx (avoids circular import with lazy pages)
+import { ThemeProvider, ThemeToggle, useTheme, ThemeContext } from './lib/theme.jsx';
+export { ThemeProvider, ThemeToggle, useTheme, ThemeContext };
 
 // ───────────── Logo Placeholder ─────────────
 /* LOGO PLACEHOLDER — replace /public/logo.svg. Brand colours: light #0077b6→#00b4d8 gradient on #f4fbff; dark #22d3ee on #00111c. Square, works at 24px, transparent background. */

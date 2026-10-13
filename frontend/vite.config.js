@@ -16,8 +16,8 @@ const cleanCssWarningsPlugin = {
   transform(code, id) {
     if (id.endsWith(".css") || id.includes(".css?")) {
       let modified = code;
-      if (modified.includes("-webkit-text-size-adjust")) {
-        modified = modified.replace(/-webkit-text-size-adjust:\s*100%;?/g, "text-size-adjust: 100%;");
+      if (modified.includes("text-size-adjust")) {
+        modified = modified.replace(/-webkit-text-size-adjust:\s*100%;?/g, "").replace(/text-size-adjust:\s*100%;?/g, "");
       }
       if (modified.includes("::-moz-focus-inner")) {
         modified = modified.replace(/\.maplibregl-ctrl button::-moz-focus-inner\s*\{[^}]*\}/g, "");
@@ -30,7 +30,8 @@ const cleanCssWarningsPlugin = {
       const file = bundle[fileName];
       if (file.type === "asset" && fileName.endsWith(".css") && typeof file.source === "string") {
         file.source = file.source
-          .replace(/-webkit-text-size-adjust:\s*100%;?/g, "text-size-adjust: 100%;")
+          .replace(/-webkit-text-size-adjust:\s*100%;?/g, "")
+          .replace(/text-size-adjust:\s*100%;?/g, "")
           .replace(/\.maplibregl-ctrl button::-moz-focus-inner\s*\{[^}]*\}/g, "");
       }
     }

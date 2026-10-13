@@ -14,7 +14,8 @@ import {
   WAIT_THRESHOLDS, DEMO_HOME, LOCATION_PRESETS, ALL_DEPARTMENTS,
   estimateTravel, waitStatus, storage
 } from '../lib/mock.js';
-import { Logo, ThemeToggle, useTheme } from '../main.jsx';
+import { Logo } from '../main.jsx';
+import { ThemeToggle, useTheme } from '../lib/theme.jsx';
 import { api } from '../lib/api.js';
 import { useLiveData } from '../lib/socket.js';
 import { notify } from '../lib/notify.js';
@@ -25,7 +26,7 @@ import {
 } from '../components/ui/index.js';
 
 const OPENFREEMAP_STYLES = {
-  bright: import.meta.env.VITE_MAP_STYLE_BRIGHT || 'https://tiles.openfreemap.org/styles/liberty',
+  bright: import.meta.env.VITE_MAP_STYLE_BRIGHT || 'https://tiles.openfreemap.org/styles/bright',
   dark: import.meta.env.VITE_MAP_STYLE_DARK || 'https://tiles.openfreemap.org/styles/dark',
 };
 
@@ -1378,6 +1379,25 @@ const MapComponent = React.memo(function MapComponent({
         console.warn('MapLibre error handled:', err);
       });
 
+      // WebGL Context Guard: Prevent permanent context loss on background/tab switch or style updates
+      const canvas = mapInstance.getCanvas();
+      const onContextLost = (e) => {
+        e.preventDefault();
+        console.warn('Map WebGL context lost; prevented browser termination.');
+      };
+      const onContextRestored = () => {
+        console.info('Map WebGL context restored; restoring style.');
+        const currentTargetStyle = currentThemeRef.current === 'dark' ? OPENFREEMAP_STYLES.dark : OPENFREEMAP_STYLES.bright;
+        try {
+          mapInstance.setStyle(currentTargetStyle, { diff: false });
+        } catch (err) {
+          console.warn('Deferred style reload error:', err);
+        }
+      };
+
+      canvas.addEventListener('webglcontextlost', onContextLost, false);
+      canvas.addEventListener('webglcontextrestored', onContextRestored, false);
+
       mapRef.current = mapInstance;
 
       // Debounced ResizeObserver: Prevents WebGL framebuffer thrashing & flickering during CSS transitions
@@ -1412,7 +1432,22 @@ const MapComponent = React.memo(function MapComponent({
     if (currentThemeRef.current !== resolvedTheme) {
       currentThemeRef.current = resolvedTheme;
       const targetStyle = resolvedTheme === 'dark' ? OPENFREEMAP_STYLES.dark : OPENFREEMAP_STYLES.bright;
-      map.setStyle(targetStyle);
+
+      const safeApplyStyle = () => {
+        try {
+          if (mapRef.current && currentThemeRef.current === resolvedTheme) {
+            mapRef.current.setStyle(targetStyle, { diff: false });
+          }
+        } catch (err) {
+          console.warn('Map style switch handled:', err);
+        }
+      };
+
+      if (map.isStyleLoaded()) {
+        safeApplyStyle();
+      } else {
+        map.once('load', safeApplyStyle);
+      }
     }
   }, [resolvedTheme]);
 
