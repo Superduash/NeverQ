@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>NeverQ — Hospital wait times and remote queue</title>
+    <meta name="description" content="See live hospital wait times on a map and join a queue remotely without logging in." />
+    <meta name="theme-color" content="#f4fbff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#00111c" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="NeverQ" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+    <script>
+      (function () {
+        var root = document.documentElement;
+        try {
+          var pref = localStorage.getItem("nq-theme");
+          if (pref !== "light" && pref !== "dark") pref = "system";
+          var dark =
+            pref === "dark" ||
+            (pref === "system" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var mode = dark ? "dark" : "light";
+          root.setAttribute("data-theme", mode);
+          root.setAttribute("data-theme-pref", pref);
+          root.style.colorScheme = mode;
+          var metas = document.querySelectorAll('meta[name="theme-color"]');
+          for (var i = 0; i < metas.length; i++) {
+            metas[i].setAttribute("content", dark ? "#00111c" : "#f4fbff");
+            metas[i].removeAttribute("media");
+          }
+        } catch (e) {
+          root.setAttribute("data-theme", "light");
+          root.style.colorScheme = "light";
+        }
+      })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <noscript>NeverQ needs JavaScript to run.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

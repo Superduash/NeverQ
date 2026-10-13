@@ -1,0 +1,13 @@
+{
+  "name": "neverq-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "NeverQ Monorepo — Hospital Queue Platform",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "start:backend": "npm --prefix backend run start"
+  }
+}

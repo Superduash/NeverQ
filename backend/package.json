@@ -1,0 +1,22 @@
+{
+  "name": "neverq-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "NeverQ Hospital Queue Management System Backend API & Socket Server",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "socket.io": "^4.8.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

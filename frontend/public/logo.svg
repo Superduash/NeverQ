@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
+  <defs>
+    <linearGradient id="nqGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0077b6" />
+      <stop offset="100%" stop-color="#00b4d8" />
+    </linearGradient>
+    <linearGradient id="nqAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6b57" />
+      <stop offset="100%" stop-color="#ffb703" />
+    </linearGradient>
+  </defs>
+  <!-- Background rounded squircle -->
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#nqGrad)" />
+  <!-- Medical cross core -->
+  <rect x="27" y="15" width="10" height="24" rx="4" fill="#ffffff" />
+  <rect x="20" y="22" width="24" height="10" rx="4" fill="#ffffff" />
+  <!-- Forward pulse / queue bypass curve -->
+  <path d="M16 46C24 43 38 41 48 46" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.9" />
+  <!-- Warm accent live dot -->
+  <circle cx="48" cy="18" r="4.5" fill="url(#nqAccent)" />
+</svg>
