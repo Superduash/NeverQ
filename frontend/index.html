@@ -20,14 +20,11 @@
       (function () {
         var root = document.documentElement;
         try {
-          var pref = localStorage.getItem("nq-theme");
-          if (pref !== "light" && pref !== "dark") pref = "system";
-          var dark =
-            pref === "dark" ||
-            (pref === "system" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var nqDark = localStorage.getItem("nq-dark");
+          var dark = nqDark === "1" || (nqDark !== "0" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
           var mode = dark ? "dark" : "light";
           root.setAttribute("data-theme", mode);
-          root.setAttribute("data-theme-pref", pref);
+          root.setAttribute("data-theme-pref", mode);
           root.style.colorScheme = mode;
           var metas = document.querySelectorAll('meta[name="theme-color"]');
           for (var i = 0; i < metas.length; i++) {

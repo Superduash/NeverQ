@@ -1,315 +1,132 @@
-/* ──────────────────────────────────────────────────────────────────────────
-   NeverQ — MOCK adapter + helpers.
-   Everything exported here that returns data is MOCK (tagged `mock: true`).
-   Shapes follow the planned API contract:
-   Org  { id, name, address, lat, lng, demo, mock, updatedAt,
-          departments: [{ id, name, openCounters, waitingCount,
-                          eta:{low,mid,high}, confidence:{level,label} }] }
-   ────────────────────────────────────────────────────────────────────────── */
+// ───────────── Config ─────────────
+export const WAIT_THRESHOLDS = { good: 15, bad: 40 }; // minutes: <15 good, >40 bad, otherwise mid
 
-export const WAIT_THRESHOLDS = { good: 15, bad: 40 };
+// Demo map area. NOT the user's real location.
+export const DEMO_CENTER = { lat: 13.05, lng: 80.235, label: 'Chennai demo area' };
 
-/** "good" (< good) | "mid" (good..bad) | "bad" (> bad) */
-export function waitTone(minutes, thresholds = WAIT_THRESHOLDS) {
-  if (minutes < thresholds.good) return "good";
-  if (minutes > thresholds.bad) return "bad";
-  return "mid";
-}
+export const DEPARTMENTS = ['General', 'Cardiology', 'Pediatrics', 'Orthopedics', 'Laboratory'];
 
-export const DEMO_HOME = { lat: 13.0418, lng: 80.2341, label: "Home" }; // MOCK — Chennai area
+// Rough average door-to-door speeds (km/h) used for ESTIMATES only.
+export const TRAVEL_MODES = [
+  { id: 'walk', label: 'Walk', kmh: 5 },
+  { id: 'bike', label: 'Bike', kmh: 14 },
+  { id: 'drive', label: 'Drive', kmh: 24 },
+  { id: 'transit', label: 'Transit', kmh: 17 },
+];
+const DETOUR_FACTOR = 1.3; // straight line → rough road distance
 
-export const CONFIDENCE = {
-  high: "Based on live queue data",
-  medium: "Based on recent averages",
-  low: "Rough estimate — limited data",
-};
-
-const TRAVEL_SPEEDS_KMH = { walk: 4.5, bike: 14, car: 22 };
-const DETOUR = 1.35;
-
-export function haversine(a, b) {
-  const R = 6371;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const s =
-    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
-}
-
-/** Approximate travel: straight-line × 1.35 ÷ speed. `rushFactor` scales time (default 1). */
-export function estimateTravel(from, to, mode = "car", rushFactor = 1) {
-  const km = haversine(from, to) * DETOUR;
-  const speed = TRAVEL_SPEEDS_KMH[mode] || TRAVEL_SPEEDS_KMH.car;
-  const minutes = Math.max(1, Math.round((km / speed) * 60 * rushFactor));
-  return { minutes, km: Math.round(km * 10) / 10, source: "estimate" };
-}
-
-/* ───────────────────────── Seed data (MOCK) ───────────────────────── */
-
-function dept(id, name, mid, openCounters, waitingCount, level) {
-  return {
-    id,
-    name,
-    openCounters,
-    waitingCount,
-    eta: etaFromMid(mid),
-    confidence: { level, label: CONFIDENCE[level] },
-  };
-}
-function etaFromMid(mid) {
-  return { low: Math.max(2, Math.round(mid * 0.7)), mid, high: Math.round(mid * 1.35) + 1 };
-}
-
-const SEED = [
+// ───────────── Mock data (FICTIONAL DEMO DATA) ─────────────
+// Hospitals, waits and counters are invented. Coordinates are real Chennai neighbourhoods.
+export const HOSPITALS = [
   {
-    id: "lakeside-general",
-    name: "Lakeside General",
-    address: "14 Lake View Road, Nungambakkam, Chennai",
-    lat: 13.0618,
-    lng: 80.2491,
-    departments: [
-      dept("lg-opd", "General OPD", 22, 4, 18, "high"),
-      dept("lg-eye", "Eye Clinic", 48, 1, 21, "medium"),
-      dept("lg-card", "Cardiology", 35, 2, 12, "high"),
-      dept("lg-pharm", "Pharmacy", 8, 3, 6, "high"),
-    ],
+    id: 'marina',
+    name: 'Marina Lakeside Medical Centre',
+    area: 'Mylapore',
+    address: 'Demo address · Mylapore, Chennai',
+    hours: 'Open 24 hours',
+    lat: 13.0368,
+    lng: 80.2676,
+    depts: {
+      General: { min: 22, max: 32, open: 4, total: 6 },
+      Cardiology: { min: 40, max: 55, open: 2, total: 3 },
+      Pediatrics: { min: 10, max: 18, open: 2, total: 3 },
+      Laboratory: { min: 5, max: 10, open: 3, total: 4 },
+    },
   },
   {
-    id: "riverbend-medical",
-    name: "Riverbend Medical Centre",
-    address: "62 Riverside Avenue, Adyar, Chennai",
-    lat: 13.0068,
-    lng: 80.2691,
-    departments: [
-      dept("rb-opd", "General OPD", 28, 3, 15, "high"),
-      dept("rb-eye", "Eye Clinic", 24, 2, 9, "medium"),
-      dept("rb-ortho", "Orthopaedics", 40, 2, 11, "medium"),
-      dept("rb-pharm", "Pharmacy", 12, 2, 7, "high"),
-      dept("rb-card", "Cardiology", 55, 1, 19, "low"),
-    ],
+    id: 'annanagar',
+    name: 'Anna Nagar Care Institute',
+    area: 'Anna Nagar',
+    address: 'Demo address · Anna Nagar, Chennai',
+    hours: 'Open 7:00 – 22:00',
+    lat: 13.085,
+    lng: 80.2101,
+    depts: {
+      General: { min: 8, max: 14, open: 5, total: 6 },
+      Pediatrics: { min: 12, max: 20, open: 2, total: 2 },
+      Orthopedics: { min: 30, max: 45, open: 1, total: 2 },
+      Laboratory: { min: 15, max: 25, open: 2, total: 3 },
+    },
   },
   {
-    id: "coral-heights",
-    name: "Coral Heights Hospital",
-    address: "3 Coral Ridge Street, Anna Nagar, Chennai",
-    lat: 13.0868,
-    lng: 80.1841,
-    departments: [
-      dept("ch-eye", "Eye Clinic", 9, 3, 3, "high"),
-      dept("ch-opd", "General OPD", 14, 5, 8, "high"),
-      dept("ch-ortho", "Orthopaedics", 31, 2, 10, "medium"),
-      dept("ch-card", "Cardiology", 18, 2, 5, "medium"),
-    ],
+    id: 'adyar',
+    name: 'Adyar Riverside Hospital',
+    area: 'Adyar',
+    address: 'Demo address · Adyar, Chennai',
+    hours: 'Open 24 hours',
+    lat: 13.0067,
+    lng: 80.257,
+    depts: {
+      General: { min: 45, max: 60, open: 2, total: 5 },
+      Cardiology: { min: 30, max: 40, open: 2, total: 2 },
+      Pediatrics: { min: 35, max: 50, open: 1, total: 2 },
+      Orthopedics: { min: 20, max: 30, open: 2, total: 3 },
+      Laboratory: { min: 10, max: 15, open: 2, total: 3 },
+    },
   },
-].map((o) => ({ ...o, demo: true, mock: true, updatedAt: Date.now() }));
+];
 
-export const DEMO_HOME_PRESET = { id: "home", label: "Home (~6 km away)", lat: DEMO_HOME.lat, lng: DEMO_HOME.lng, shortLabel: "Home" };
-
-let state = clone(SEED);
-
-function clone(v) {
-  return JSON.parse(JSON.stringify(v));
-}
-function delay(min = 150, max = 400) {
-  return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
-}
-function notFound(what) {
-  const e = new Error(`${what} not found`);
-  e.status = 404;
-  return e;
+// ───────────── Helpers ─────────────
+export function haversineKm(a, b) {
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.sqrt(h));
 }
 
-/* ───────────────────────── Storage helpers (all try/catch) ───────────────────────── */
-
-const K = {
-  device: "nq-device-id",
-  ticket: "nq-active-ticket",
-  saved: "nq-saved-orgs",
-  recent: "nq-recent-orgs",
-  searches: "nq-recent-searches",
-  loc: "nq-last-location",
-  theme: "nq-theme",
-};
-
-function read(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw == null ? fallback : JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-function write(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch {
-    return false;
-  }
-}
-function remove(key) {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    /* ignore */
-  }
-}
-function uuid() {
-  try {
-    if (crypto?.randomUUID) return crypto.randomUUID();
-  } catch {
-    /* ignore */
-  }
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-  });
+export function travelMinutes(km, modeId) {
+  const mode = TRAVEL_MODES.find((m) => m.id === modeId) || TRAVEL_MODES[2];
+  return Math.max(1, Math.round(((km * DETOUR_FACTOR) / mode.kmh) * 60));
 }
 
-export const storage = {
-  read,
-  write,
-  getDeviceId() {
-    let id = read(K.device, null);
-    if (!id || typeof id !== "string") {
-      id = uuid();
-      write(K.device, id);
-    }
-    return id;
-  },
-  /** { token, orgId, label, name } */
-  getActiveTicket() {
-    const t = read(K.ticket, null);
-    return t && typeof t.token === "string" ? t : null;
-  },
-  setActiveTicket({ token, orgId, label, name }) {
-    return write(K.ticket, { token, orgId, label, name });
-  },
-  clearActiveTicket() {
-    remove(K.ticket);
-  },
-  getSaved() {
-    const v = read(K.saved, []);
-    return Array.isArray(v) ? v : [];
-  },
-  toggleSaved(orgId) {
-    const cur = storage.getSaved();
-    const next = cur.includes(orgId) ? cur.filter((x) => x !== orgId) : [orgId, ...cur];
-    write(K.saved, next);
-    return next;
-  },
-  getRecent() {
-    const v = read(K.recent, []);
-    return Array.isArray(v) ? v.slice(0, 5) : [];
-  },
-  pushRecent(orgId) {
-    const next = [orgId, ...storage.getRecent().filter((x) => x !== orgId)].slice(0, 5);
-    write(K.recent, next);
-    return next;
-  },
-  getRecentSearches() {
-    const v = read(K.searches, []);
-    return Array.isArray(v) ? v.slice(0, 5) : [];
-  },
-  pushRecentSearch(item) {
-    const next = [item, ...storage.getRecentSearches().filter((x) => !(x.type === item.type && x.label === item.label))].slice(0, 5);
-    write(K.searches, next);
-    return next;
-  },
-  clearRecentSearches() {
-    remove(K.searches);
-  },
-  /** Never stores coordinates — only a preset id or the flag "map". */
-  getLastLocation() {
-    const v = read(K.loc, null);
-    return typeof v === "string" ? v : null;
-  },
-  setLastLocation(flag) {
-    if (flag == null) remove(K.loc);
-    else write(K.loc, String(flag));
-  },
-  /** Raw string (not JSON) so the blocking script in index.html can read it directly. */
-  getTheme() {
-    try {
-      const v = localStorage.getItem(K.theme);
-      return v === "light" || v === "dark" ? v : "system";
-    } catch {
-      return "system";
-    }
-  },
-  setTheme(v) {
-    try {
-      localStorage.setItem(K.theme, v);
-    } catch {
-      /* ignore */
-    }
-  },
-};
-
-/* ───────────────────────── Mock API ───────────────────────── */
-
-const listeners = new Set();
-let timer = null;
-
-function jitterTick() {
-  state = state.map((org) => ({
-    ...org,
-    updatedAt: Date.now(),
-    departments: org.departments.map((d) => {
-      if (Math.random() < 0.45) return d;
-      const step = Math.round((Math.random() * 2 - 1) * 4) || 1;
-      const mid = Math.min(75, Math.max(3, d.eta.mid + step));
-      const waiting = Math.max(0, d.waitingCount + (step > 0 ? 1 : -1));
-      return { ...d, waitingCount: waiting, eta: etaFromMid(mid) };
-    }),
-  }));
-  const snapshot = clone(state);
-  listeners.forEach((cb) => {
-    try {
-      cb(snapshot);
-    } catch {
-      /* listener errors never break the loop */
-    }
-  });
+export function waitStatus(avgMinutes) {
+  if (avgMinutes < WAIT_THRESHOLDS.good) return 'good';
+  if (avgMinutes > WAIT_THRESHOLDS.bad) return 'bad';
+  return 'mid';
 }
 
-export const mockApi = {
-  async listOrgs({ lat, lng, dept: deptName } = {}) {
-    await delay();
-    let orgs = clone(state);
-    if (deptName && deptName !== "All") {
-      orgs = orgs.filter((o) => o.departments.some((d) => d.name === deptName));
-    }
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      orgs = orgs
-        .map((o) => ({ ...o, distanceKm: Math.round(haversine({ lat, lng }, o) * 10) / 10 }))
-        .sort((a, b) => a.distanceKm - b.distanceKm);
-    }
-    return orgs;
-  },
-  async getOrg(id) {
-    await delay();
-    const org = state.find((o) => o.id === id);
-    if (!org) throw notFound("Hospital");
-    return clone(org);
-  },
-  async getTicket(token) {
-    await delay();
-    const t = storage.getActiveTicket();
-    if (!t || t.token !== token || t.endedAt) throw notFound("Ticket");
-    return { ...t, status: "waiting", mock: true };
-  },
-  /** Simulated live updates (MOCK). Returns an unsubscribe function. */
-  subscribe(cb) {
-    listeners.add(cb);
-    if (!timer) timer = setInterval(jitterTick, 4000);
-    return () => {
-      listeners.delete(cb);
-      if (listeners.size === 0 && timer) {
-        clearInterval(timer);
-        timer = null;
-      }
+export const formatKm = (km) => (km < 10 ? km.toFixed(1) : String(Math.round(km)));
+
+// Wait + counters for a department; "All" shows General OPD waits with counters summed.
+export function waitFor(hospital, dept) {
+  if (dept === 'All') {
+    const all = Object.values(hospital.depts);
+    const g = hospital.depts.General;
+    return {
+      min: g.min,
+      max: g.max,
+      open: all.reduce((s, d) => s + d.open, 0),
+      total: all.reduce((s, d) => s + d.total, 0),
+      label: 'General OPD',
     };
-  },
-};
+  }
+  return { ...hospital.depts[dept], label: dept };
+}
+
+// Search + department filter + sort, enriched with distance, travel and wait info.
+export function getResults({ query, dept, sort, mode, origin }) {
+  const q = query.trim().toLowerCase();
+  return HOSPITALS.filter(
+    (h) =>
+      (dept === 'All' || h.depts[dept]) &&
+      (!q || [h.name, h.area, ...Object.keys(h.depts)].join(' ').toLowerCase().includes(q))
+  )
+    .map((h) => {
+      const km = haversineKm(origin, h);
+      const travel = travelMinutes(km, mode);
+      const wait = waitFor(h, dept);
+      const avg = (wait.min + wait.max) / 2;
+      return {
+        ...h,
+        km,
+        travel,
+        wait,
+        status: waitStatus(avg),
+        waitText: `${wait.min}–${wait.max} min`,
+        waitShort: `${wait.min}–${wait.max}m`,
+        total: travel + avg, // "Fastest" = estimated travel + wait
+      };
+    })
+    .sort((a, b) => (sort === 'fastest' ? a.total - b.total : a.km - b.km));
+}
