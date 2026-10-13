@@ -69,6 +69,18 @@ export const storage = {
   getLocation: () => read(sessionStorage, 'nq-location'),
   setLocation: (loc) => write(sessionStorage, 'nq-location', loc),
 
+  // Last-used location preset id (e.g. 'demo', 'saved_home', 'lakeside', 'gps')
+  // persisted in localStorage so the map re-opens at the same origin
+  getLastLocationPreset: () => {
+    try { return localStorage.getItem('nq-last-preset') || null; } catch { return null; }
+  },
+  setLastLocationPreset: (id) => {
+    try {
+      if (id) localStorage.setItem('nq-last-preset', id);
+      else localStorage.removeItem('nq-last-preset');
+    } catch { /* ignore */ }
+  },
+
   // User-chosen Home (explicitly saved by the user on this device)
   getSavedHome: () => read(localStorage, 'nq-saved-home'),
   setSavedHome: (home) => write(localStorage, 'nq-saved-home', home),

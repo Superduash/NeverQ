@@ -482,13 +482,6 @@ export default function Landing() {
                   <Sparkles size={18} />
                 </Link>
               )}
-
-              <div className="mt-auto flex flex-col items-center gap-2 pb-2">
-                <span
-                  className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-[var(--success)]' : 'bg-[var(--danger)]'}`}
-                  title={isOnline ? 'Connected' : 'Offline'}
-                />
-              </div>
             </div>
           ) : (
             /* ──────── Expanded Sidebar State (~420px-450px) ──────── */
