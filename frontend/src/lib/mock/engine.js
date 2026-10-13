@@ -853,6 +853,42 @@ class MockEngine {
     return ticket;
   }
 
+  // POST /api/staff/tickets/:id/arrive
+  confirmArrival(ticketId) {
+    const ticket = this.db.tickets.find((t) => t.id === ticketId);
+    if (!ticket) throw { status: 404, code: 'NOT_FOUND', message: 'Ticket not found' };
+    ticket.arrived = true;
+    ticket.arriveDeadline = null;
+    this.save();
+    mockEmitter.emit('ticket:update', ticket);
+    mockEmitter.emit('queue:update', { orgId: ticket.orgId, deptId: ticket.deptId });
+    return ticket;
+  }
+
+  // POST /api/staff/tickets/:id/remove-claim
+  removeClaim(ticketId) {
+    const ticket = this.db.tickets.find((t) => t.id === ticketId);
+    if (!ticket) throw { status: 404, code: 'NOT_FOUND', message: 'Ticket not found' };
+    ticket.priority = 'none';
+    this.simulateQueue(ticket.orgId, ticket.deptId);
+    this.save();
+    mockEmitter.emit('ticket:update', ticket);
+    mockEmitter.emit('queue:update', { orgId: ticket.orgId, deptId: ticket.deptId });
+    return ticket;
+  }
+
+  // POST /api/staff/tickets/:id/remove
+  removeTicket(ticketId, { blockPhone = false } = {}) {
+    const ticket = this.db.tickets.find((t) => t.id === ticketId);
+    if (!ticket) throw { status: 404, code: 'NOT_FOUND', message: 'Ticket not found' };
+    ticket.status = 'removed';
+    this.simulateQueue(ticket.orgId, ticket.deptId);
+    this.save();
+    mockEmitter.emit('ticket:update', ticket);
+    mockEmitter.emit('queue:update', { orgId: ticket.orgId, deptId: ticket.deptId });
+    return { ok: true, status: 'removed' };
+  }
+
   // POST /api/staff/walkin
   addWalkin({ orgId, deptId, name, priority = 'none' }) {
     const org = this.db.orgs.find((o) => o.id === orgId);
@@ -1056,6 +1092,131 @@ class MockEngine {
     this.save();
     mockEmitter.emit('queue:update', { reason: 'rush-hour' });
     return { rushFactor: factor };
+  }
+
+  // POST /api/admin/demo/simulate
+  simulatePatients({ orgId = 'harbour', deptId = 'gen', count = 5 }) {
+    const org = this.db.orgs.find((o) => o.id === orgId) || this.db.orgs[0];
+    const dept = org.departments.find((d) => d.id === deptId) || org.departments[0];
+    const priorities = ['none', 'none', 'senior', 'pregnant', 'none', 'disabled'];
+    const names = ['Aakash R.', 'Sunita P.', 'Karthik V.', 'Meera S.', 'Daniel K.', 'Fatima Z.', 'Murugan T.', 'Deepa N.'];
+
+    const created = [];
+    const now = this.now();
+
+    for (let i = 0; i < count; i++) {
+      dept.seq = (dept.seq || 0) + 1;
+      const prefix = dept.name.charAt(0).toUpperCase();
+      const label = `${prefix}-${String(dept.seq).padStart(3, '0')}`;
+      const token = `sim-${Date.now()}-${i}`;
+      const priority = priorities[i % priorities.length];
+      const isArrived = i % 2 === 0;
+
+      const ticket = {
+        id: `t-sim-${Date.now()}-${i}`,
+        orgId: org.id,
+        deptId: dept.id,
+        token,
+        label,
+        name: names[i % names.length],
+        phone: '',
+        deviceId: 'sim',
+        priority,
+        urgent: false,
+        urgentReason: null,
+        status: 'waiting',
+        arrived: isArrived,
+        lateCount: 0,
+        joinedAt: now - (count - i) * 2 * 60 * 1000,
+        sortKey: now - (count - i) * 2 * 60 * 1000,
+        calledAt: null,
+        startedAt: null,
+        doneAt: null,
+        arriveDeadline: isArrived ? null : now + 15 * 60 * 1000,
+        firstEta: { low: 10, mid: 15, high: 20 },
+        lastEta: { low: 10, mid: 15, high: 20 },
+        changes: [],
+        simulated: true,
+      };
+
+      this.db.tickets.push(ticket);
+      created.push(ticket);
+    }
+
+    this.simulateQueue(org.id, dept.id);
+    this.save();
+    mockEmitter.emit('queue:update', { reason: 'simulate' });
+    return created;
+  }
+
+  // POST /api/admin/orgs
+  createOrg(payload) {
+    const id = payload.id || `org-${Date.now().toString(36)}`;
+    const newOrg = {
+      id,
+      name: payload.name || 'New Community Medical Centre',
+      category: 'hospital',
+      demo: true,
+      lat: Number(payload.lat) || 13.0450,
+      lng: Number(payload.lng) || 80.2450,
+      area: payload.area || 'Central',
+      address: payload.address || 'Chennai, India',
+      hours: payload.hours || '8:00 AM – 8:00 PM',
+      staffPin: payload.staffPin || '1234',
+      open: payload.open !== false,
+      rules: {
+        priorityCreditMin: payload.rules?.priorityCreditMin || { senior: 20, pregnant: 20, disabled: 20, none: 0 },
+        arriveByMin: Number(payload.rules?.arriveByMin) || 15,
+        graceMin: Number(payload.rules?.graceMin) || 5,
+        remoteCap: Number(payload.rules?.remoteCap) || 10,
+        remoteEnabled: payload.rules?.remoteEnabled !== false,
+      },
+      departments: payload.departments || [
+        {
+          id: 'gen',
+          name: 'General OPD',
+          defaultMin: 12,
+          stats: { n: 5, mean: 12.0, m2: 5.0 },
+          seq: 10,
+          counters: [{ id: 'c1', name: 'Room 1 — Consulting', state: 'open', currentTicketId: null, delayUntil: null, delayReason: null }],
+        },
+      ],
+    };
+
+    this.db.orgs.push(newOrg);
+    this.save();
+    mockEmitter.emit('queue:update', { reason: 'create-org' });
+    return newOrg;
+  }
+
+  // PUT /api/admin/orgs/:id
+  updateOrg(id, payload) {
+    const org = this.db.orgs.find((o) => o.id === id);
+    if (!org) throw { status: 404, code: 'NOT_FOUND', message: 'Hospital not found' };
+
+    if (payload.name) org.name = payload.name;
+    if (payload.lat !== undefined) org.lat = Number(payload.lat);
+    if (payload.lng !== undefined) org.lng = Number(payload.lng);
+    if (payload.area) org.area = payload.area;
+    if (payload.address) org.address = payload.address;
+    if (payload.staffPin) org.staffPin = payload.staffPin;
+    if (payload.open !== undefined) org.open = payload.open;
+    if (payload.rules) org.rules = { ...org.rules, ...payload.rules };
+    if (payload.departments) org.departments = payload.departments;
+
+    this.save();
+    mockEmitter.emit('queue:update', { reason: 'update-org' });
+    return org;
+  }
+
+  // POST /api/admin/orgs/:id/toggle-open
+  toggleOrgStatus(id) {
+    const org = this.db.orgs.find((o) => o.id === id);
+    if (!org) throw { status: 404, code: 'NOT_FOUND', message: 'Hospital not found' };
+    org.open = org.open === false ? true : false;
+    this.save();
+    mockEmitter.emit('queue:update', { reason: 'toggle-status' });
+    return org;
   }
 }
 

@@ -234,6 +234,40 @@ export const api = {
     });
   },
 
+  // POST /api/staff/tickets/:id/arrive
+  confirmArrival: async (ticketId) => {
+    if (USE_MOCK) {
+      await new Promise((r) => setTimeout(r, 120));
+      return mockEngine.confirmArrival(ticketId);
+    }
+    return request(`/staff/tickets/${ticketId}/arrive`, {
+      method: 'POST',
+    });
+  },
+
+  // POST /api/staff/tickets/:id/remove-claim
+  removeClaim: async (ticketId) => {
+    if (USE_MOCK) {
+      await new Promise((r) => setTimeout(r, 120));
+      return mockEngine.removeClaim(ticketId);
+    }
+    return request(`/staff/tickets/${ticketId}/remove-claim`, {
+      method: 'POST',
+    });
+  },
+
+  // POST /api/staff/tickets/:id/remove
+  removeTicket: async (ticketId, { blockPhone = false } = {}) => {
+    if (USE_MOCK) {
+      await new Promise((r) => setTimeout(r, 120));
+      return mockEngine.removeTicket(ticketId, { blockPhone });
+    }
+    return request(`/staff/tickets/${ticketId}/remove`, {
+      method: 'POST',
+      body: JSON.stringify({ blockPhone }),
+    });
+  },
+
   // POST /api/staff/walkin
   addWalkin: async ({ deptId, name, priority }) => {
     const orgId = localStorage.getItem('nq-staff-org') || 'harbour';
@@ -344,6 +378,53 @@ export const api = {
     return request('/admin/demo/rush-hour', {
       method: 'POST',
       body: JSON.stringify({ factor }),
+      role: 'admin',
+    });
+  },
+
+  simulatePatients: async ({ orgId, deptId, count }) => {
+    if (USE_MOCK) {
+      await new Promise((r) => setTimeout(r, 120));
+      return mockEngine.simulatePatients({ orgId, deptId, count });
+    }
+    return request('/admin/demo/simulate', {
+      method: 'POST',
+      body: JSON.stringify({ orgId, deptId, count }),
+      role: 'admin',
+    });
+  },
+
+  createOrg: async (payload) => {
+    if (USE_MOCK) {
+      await new Promise((r) => setTimeout(r, 150));
+      return mockEngine.createOrg(payload);
+    }
+    return request('/admin/orgs', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      role: 'admin',
+    });
+  },
+
+  updateOrg: async (id, payload) => {
+    if (USE_MOCK) {
+      await new Promise((r) => setTimeout(r, 150));
+      return mockEngine.updateOrg(id, payload);
+    }
+    return request(`/admin/orgs/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+      role: 'admin',
+    });
+  },
+
+  toggleOrgStatus: async (id) => {
+    if (USE_MOCK) {
+      await new Promise((r) => setTimeout(r, 100));
+      return mockEngine.toggleOrgStatus(id);
+    }
+    return request(`/admin/orgs/${id}/toggle-open`, {
+      method: 'POST',
       role: 'admin',
     });
   },

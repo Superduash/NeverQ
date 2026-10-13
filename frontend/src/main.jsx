@@ -93,6 +93,10 @@ const LandingLazy = lazy(() => import('./pages/Landing.jsx'));
 const HospitalViewLazy = lazy(() => import('./pages/HospitalView.jsx'));
 const JoinQueueLazy = lazy(() => import('./pages/JoinQueue.jsx'));
 const LiveTicketLazy = lazy(() => import('./pages/LiveTicket.jsx'));
+const StaffLoginLazy = lazy(() => import('./pages/StaffLogin.jsx'));
+const StaffDashboardLazy = lazy(() => import('./pages/StaffDashboard.jsx'));
+const AdminLoginLazy = lazy(() => import('./pages/AdminLogin.jsx'));
+const AdminDashboardLazy = lazy(() => import('./pages/AdminDashboard.jsx'));
 
 function AppShell() {
   const location = useLocation();
@@ -126,21 +130,21 @@ function AppShell() {
             </Route>
 
             {/* Public Staff & Admin Login */}
-            <Route path="/staff/login" element={<RouteStub name="Staff Login" />} />
-            <Route path="/admin/login" element={<RouteStub name="Admin Login" />} />
+            <Route path="/staff/login" element={<StaffLoginLazy />} />
+            <Route path="/admin/login" element={<AdminLoginLazy />} />
 
             {/* Protected Staff Routes under StaffLayout */}
             <Route element={<RequireStaff />}>
               <Route element={<StaffLayout />}>
-                <Route path="/staff" element={<RouteStub name="Staff Dashboard" />} />
+                <Route path="/staff" element={<StaffDashboardLazy />} />
               </Route>
             </Route>
 
             {/* Protected Admin Routes under AdminLayout */}
             <Route element={<RequireAdmin />}>
               <Route element={<AdminLayout />}>
-                <Route path="/admin" element={<RouteStub name="Admin Dashboard" />} />
-                <Route path="/admin/orgs/:id" element={<RouteStub name="Admin Org Details" />} />
+                <Route path="/admin" element={<AdminDashboardLazy />} />
+                <Route path="/admin/orgs/:id" element={<AdminDashboardLazy />} />
               </Route>
             </Route>
 

@@ -28,6 +28,7 @@ export function Badge({
     done: 'bg-[var(--wait-good-bg)] text-[var(--wait-good-text)] font-bold',
     cancelled: 'bg-[var(--surface-2)] text-[var(--ink-faint)] font-medium line-through',
     expired: 'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)] font-medium',
+    removed: 'bg-[var(--wait-bad-bg)] text-[var(--wait-bad-text)] font-medium',
   }[variant] || 'bg-[var(--surface-2)] text-[var(--ink-faint)]';
 
   return (
