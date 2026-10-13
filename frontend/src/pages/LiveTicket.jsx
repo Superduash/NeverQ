@@ -48,6 +48,8 @@ export default function LiveTicket() {
   const [cancelling, setCancelling] = useState(false);
   const [arriving, setArriving] = useState(false);
   const [arriveError, setArriveError] = useState(null);
+  // F-01: travelMode was used but never declared — bloccker fix
+  const [travelMode, setTravelMode] = useState('car'); // 'walk' | 'bike' | 'car'
 
   // Alerts unlock state
   const [alertsUnlocked, setAlertsUnlockedState] = useState(() => isAlertsUnlocked());
@@ -106,9 +108,10 @@ export default function LiveTicket() {
     return estimateTravel(userLocation || DEMO_HOME, { lat: ticket.org.lat, lng: ticket.org.lng }, travelMode);
   }, [ticket, userLocation, travelMode]);
 
-  // Leave-by calculations
-  const etaMid = ticket?.lastEta?.mid || 15;
+  // F-02: use ?? null so a real wait of 0 isn't replaced by 15
+  const etaMid = ticket?.lastEta?.mid ?? null;
   const leavePlan = useMemo(() => {
+    if (etaMid == null) return null;
     return leaveBy(etaMid, travel.minutes, 5);
   }, [etaMid, travel.minutes]);
 

@@ -24,7 +24,8 @@ export default function JoinQueue() {
   const [orgError, setOrgError] = useState(null);
 
   // Form State
-  const [selectedDeptId, setSelectedDeptId] = useState(deptId || 'gen');
+  // F-20: don't hard-code 'gen' — will be set from hospital data once loaded
+  const [selectedDeptId, setSelectedDeptId] = useState(deptId || '');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [beneficiary, setBeneficiary] = useState('');
@@ -42,8 +43,12 @@ export default function JoinQueue() {
     api.getOrg(orgId)
       .then((data) => {
         setHospital(data);
+        // F-20: set first available dept if none specified
         if (!selectedDeptId && data.departments?.[0]?.id) {
           setSelectedDeptId(data.departments[0].id);
+        } else if (selectedDeptId && !data.departments?.some((d) => d.id === selectedDeptId)) {
+          // provided dept doesn't exist in this org — fall back to first
+          setSelectedDeptId(data.departments?.[0]?.id || '');
         }
       })
       .catch((err) => {
@@ -81,6 +86,8 @@ export default function JoinQueue() {
         name: name.trim(),
         phone: phone.trim(),
         priority,
+        // F-20: send beneficiary when set
+        ...(beneficiary.trim() ? { beneficiary: beneficiary.trim() } : {}),
         deviceId,
       });
 

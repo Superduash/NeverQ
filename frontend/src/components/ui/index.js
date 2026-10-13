@@ -26,3 +26,5 @@ export * from './Table.jsx';
 export * from './InstallPrompt.jsx';
 export * from './WaitPill.jsx';
 export * from './DeptIcon.jsx';
+export * from './HScrollable.jsx';
+

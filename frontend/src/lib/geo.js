@@ -25,8 +25,11 @@ export const DEMO_HOME = {
 
 export const LOCATION_PRESETS = [
   DEMO_HOME,
-  { id: 'lakeside', type: 'preset', lat: 13.0368, lng: 80.2676, label: 'At Lakeside General' },
+  // F-06: coords corrected to match seed data (13.0850, 80.2101 = Anna Nagar)
+  { id: 'lakeside', type: 'preset', lat: 13.0850, lng: 80.2101, label: 'At Lakeside General' },
   { id: 'adyar', type: 'preset', lat: 13.0067, lng: 80.257, label: 'At Adyar Riverside' },
+  // At Harbour Care Clinic (Mylapore)
+  { id: 'harbour', type: 'preset', lat: 13.0338, lng: 80.2676, label: 'At Harbour Care Clinic' },
 ];
 
 export const isValidCoord = (loc) =>

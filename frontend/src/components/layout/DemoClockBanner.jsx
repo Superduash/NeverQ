@@ -1,21 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { Clock } from 'lucide-react';
-import { mockEngine } from '../../lib/mock/engine.js';
 
+const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
+
+// F-07: DemoClockBanner is only meaningful in mock mode.
+// In real mode it would read a stale in-memory mockEngine, so we guard it.
 export function DemoClockBanner() {
-  const [offsetMinutes, setOffsetMinutes] = useState(() => {
-    return Math.round((mockEngine.db?.settings?.clockOffsetMs || 0) / (60 * 1000));
-  });
+  const [offsetMinutes, setOffsetMinutes] = useState(0);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      const current = Math.round((mockEngine.db?.settings?.clockOffsetMs || 0) / (60 * 1000));
-      setOffsetMinutes(current);
-    }, 2000);
-    return () => clearInterval(timer);
+    if (!USE_MOCK) return; // F-07: skip entirely in real mode
+
+    // Lazy import mockEngine only in mock mode to avoid bundling it in prod
+    import('../../lib/mock/engine.js').then(({ mockEngine }) => {
+      const read = () =>
+        Math.round((mockEngine.db?.settings?.clockOffsetMs || 0) / 60000);
+
+      setOffsetMinutes(read());
+
+      const timer = setInterval(() => setOffsetMinutes(read()), 2000);
+      return () => clearInterval(timer);
+    });
   }, []);
 
-  if (offsetMinutes === 0) return null;
+  if (!USE_MOCK || offsetMinutes === 0) return null;
 
   return (
     <div
@@ -28,7 +36,8 @@ export function DemoClockBanner() {
       </div>
       <button
         type="button"
-        onClick={() => {
+        onClick={async () => {
+          const { mockEngine } = await import('../../lib/mock/engine.js');
           mockEngine.db.settings.clockOffsetMs = 0;
           mockEngine.save();
           setOffsetMinutes(0);

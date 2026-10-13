@@ -11,9 +11,10 @@ import {
   ChevronUp, ChevronDown
 } from 'lucide-react';
 import {
-  WAIT_THRESHOLDS, DEMO_HOME, DEFAULT_SAVED_HOME, LOCATION_PRESETS, ALL_DEPARTMENTS,
+  WAIT_THRESHOLDS, DEMO_HOME, DEFAULT_SAVED_HOME, LOCATION_PRESETS,
   estimateTravel, waitStatus, storage
 } from '../lib/mock.js';
+// F-16: ALL_DEPARTMENTS is now derived from real orgs, not the mock seed
 import { Logo } from '../main.jsx';
 import { ThemeToggle, useTheme } from '../lib/theme.jsx';
 import { api } from '../lib/api.js';
@@ -22,7 +23,7 @@ import { notify } from '../lib/notify.js';
 import { NOTIFICATION_MESSAGES } from '../lib/messages.js';
 import {
   Button, IconButton, Chip, Badge, Segmented,
-  EmptyState, ErrorState, Skeleton
+  EmptyState, ErrorState, Skeleton, HScrollable
 } from '../components/ui/index.js';
 import { MapView } from '../components/map/index.js';
 
@@ -174,7 +175,7 @@ export default function Landing() {
           ? h.departments.find((d) => d.name === 'General OPD') || h.departments[0]
           : h.departments.find((d) => d.name === selectedDept) || h.departments[0];
 
-      const waitMid = deptObj?.eta?.mid || 15;
+      const waitMid = deptObj?.eta?.mid ?? 0; // F-02: 0 is valid (idle counter), not 15
       const totalTime = travel.minutes + waitMid;
 
       let distanceLabel = '';
@@ -230,6 +231,20 @@ export default function Landing() {
       return matchName || matchArea || matchDepts;
     });
   }, [enrichedHospitals, query]);
+
+  // F-16: Build chip list from whatever orgs are actually loaded (real or mock)
+  const ALL_DEPARTMENTS = useMemo(() => {
+    const names = new Set();
+    (rawHospitals || []).forEach((h) =>
+      (h.departments || []).forEach((d) => names.add(d.name))
+    );
+    const sorted = ['All', ...Array.from(names).sort()];
+    // Ensure common departments are in a consistent order
+    const PREFERRED = ['All', 'General OPD', 'Eye Clinic', 'Cardiology', 'Pharmacy', 'Orthopaedics'];
+    const extra = sorted.filter((n) => !PREFERRED.includes(n));
+    const known = PREFERRED.filter((n) => n === 'All' || names.has(n));
+    return [...known, ...extra];
+  }, [rawHospitals]);
 
   // Selected hospital details
   const selectedHospital = useMemo(() => {
@@ -564,9 +579,10 @@ export default function Landing() {
                 </div>
 
                 {/* Department Chips (Horizontally Scrollable) */}
-                <div className="shrink-0 -mx-1 px-1">
-                  <div
-                    className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 scroll-smooth"
+                <div className="shrink-0">
+                  <HScrollable
+                    className="flex items-center gap-1.5 py-0.5"
+                    wrapperClassName="-mx-1 px-1"
                     role="tablist"
                     aria-label="Department filters"
                   >
@@ -584,7 +600,7 @@ export default function Landing() {
                         </Chip>
                       );
                     })}
-                  </div>
+                  </HScrollable>
                 </div>
 
                 {/* Filters Row: Sort Mode & Travel Mode */}
@@ -755,7 +771,7 @@ export default function Landing() {
                     <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block mb-1">
                       Saved & Recent
                     </span>
-                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                    <HScrollable className="flex items-center gap-1.5 py-0.5">
                       {enrichedHospitals
                         .filter((h) => savedOrgIds.includes(h.id) || recentOrgIds.includes(h.id))
                         .map((h) => (
@@ -775,7 +791,7 @@ export default function Landing() {
                             </span>
                           </button>
                         ))}
-                    </div>
+                    </HScrollable>
                   </div>
                 )}
 
@@ -848,7 +864,7 @@ export default function Landing() {
             </div>
 
             {/* Department Chips */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 shrink-0">
+            <HScrollable className="flex items-center gap-1.5 py-0.5 shrink-0">
               {ALL_DEPARTMENTS.map((deptName) => {
                 const Icon = DEPT_ICONS[deptName] || Stethoscope;
                 const active = selectedDept === deptName;
@@ -863,7 +879,7 @@ export default function Landing() {
                   </Chip>
                 );
               })}
-            </div>
+            </HScrollable>
 
             {/* Controls: Sort & Travel */}
             <div className="flex items-center justify-between gap-2 pt-1 border-t border-[var(--border)] shrink-0">
@@ -1190,7 +1206,7 @@ export default function Landing() {
                 {sheetSnap !== 'peek' && (
                   <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-6 flex flex-col gap-3">
                     {/* Horizontal department filter chips inside sheet */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 shrink-0">
+                    <HScrollable className="flex items-center gap-1.5 py-1 shrink-0">
                       {ALL_DEPARTMENTS.map((deptName) => {
                         const Icon = DEPT_ICONS[deptName] || Stethoscope;
                         const active = selectedDept === deptName;
@@ -1205,7 +1221,7 @@ export default function Landing() {
                           </Chip>
                         );
                       })}
-                    </div>
+                    </HScrollable>
 
                     {/* Cards */}
                     <div className="flex flex-col gap-3">

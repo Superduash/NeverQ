@@ -7,12 +7,14 @@ import { mockEmitter } from './mock/engine.js';
 import { useOnline } from './utils.js';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
+// F-23 companion: empty VITE_SOCKET_URL => same-origin (let socket.io auto-detect)
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || undefined;
 
 class SocketManager {
   constructor() {
     this.socket = null;
-    this.rooms = new Set();
+    // F-10: ref-counted rooms so leaveRoom only emits when count reaches 0
+    this.roomRefs = new Map(); // room -> count
     this.statusListeners = new Set();
     this.state = 'connected'; // 'connected' | 'reconnecting' | 'disconnected'
 
@@ -21,20 +23,25 @@ class SocketManager {
     }
   }
 
+  // F-09: always read token fresh so post-login reconnects are authenticated
+  _getAuthToken() {
+    return localStorage.getItem('nq-staff-token') || localStorage.getItem('nq-admin-token') || null;
+  }
+
   initRealSocket() {
-    const staffToken = localStorage.getItem('nq-staff-token');
+    const token = this._getAuthToken();
     this.socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      auth: staffToken ? { token: staffToken } : undefined,
+      auth: (cb) => cb({ token: this._getAuthToken() }), // F-09: lazy cb form
     });
 
     this.socket.on('connect', () => {
       this.updateState('connected');
-      // Re-join active rooms
-      this.rooms.forEach((room) => this.socket.emit('room:join', room));
+      // Re-join all active rooms on reconnect
+      this.roomRefs.forEach((_, room) => this.socket.emit('room:join', room));
     });
 
     this.socket.on('reconnect_attempt', () => {
@@ -53,17 +60,25 @@ class SocketManager {
 
   joinRoom(room) {
     if (!room) return;
-    this.rooms.add(room);
-    if (!USE_MOCK && this.socket?.connected) {
+    // F-10: increment ref count
+    const count = (this.roomRefs.get(room) || 0) + 1;
+    this.roomRefs.set(room, count);
+    if (count === 1 && !USE_MOCK && this.socket?.connected) {
       this.socket.emit('room:join', room);
     }
   }
 
   leaveRoom(room) {
     if (!room) return;
-    this.rooms.delete(room);
-    if (!USE_MOCK && this.socket?.connected) {
-      this.socket.emit('room:leave', room);
+    // F-10: only actually leave when last subscriber goes
+    const count = (this.roomRefs.get(room) || 0) - 1;
+    if (count <= 0) {
+      this.roomRefs.delete(room);
+      if (!USE_MOCK && this.socket?.connected) {
+        this.socket.emit('room:leave', room);
+      }
+    } else {
+      this.roomRefs.set(room, count);
     }
   }
 

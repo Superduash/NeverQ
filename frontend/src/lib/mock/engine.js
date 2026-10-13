@@ -967,7 +967,7 @@ class MockEngine {
       arrived: true,
       lateCount: 0,
       joinedAt: now,
-      sortKey: -Infinity, // Front of the line
+      sortKey: Number.MIN_SAFE_INTEGER, // F-18: -Infinity becomes null in JSON, use MIN_SAFE_INTEGER instead
       calledAt: null,
       startedAt: null,
       doneAt: null,

@@ -95,9 +95,15 @@ export default function AdminDashboard() {
 
   const handleSimulate = async () => {
     try {
+      // F-12: use first loaded hospital id, not hard-coded 'harbour'
+      const targetOrg = hospitals[0];
+      if (!targetOrg) { notify.error('No hospitals loaded yet'); return; }
+      // F-12: verify the selected dept exists in that org
+      const deptExists = targetOrg.departments?.some((d) => d.id === simDept);
+      const resolvedDept = deptExists ? simDept : targetOrg.departments?.[0]?.id || 'gen';
       await api.simulatePatients({
-        orgId: hospitals[0]?.id || 'harbour',
-        deptId: simDept,
+        orgId: targetOrg.id,
+        deptId: resolvedDept,
         count: simCount,
       });
       notify.success(`Simulated ${simCount} patients in department`);
@@ -133,28 +139,33 @@ export default function AdminDashboard() {
   // Scenario Presets (Phase 9.5)
   const runScenario = async (type) => {
     try {
+      // F-12: derive org and counters from loaded hospitals data
+      const targetOrg = hospitals[0];
+      if (!targetOrg) { notify.error('Load hospitals first'); return; }
+      const genDept = targetOrg.departments?.find((d) => d.id === 'gen' || d.name === 'General OPD');
+      const deptId = genDept?.id || targetOrg.departments?.[0]?.id || 'gen';
+      const counters = genDept?.counters || targetOrg.departments?.[0]?.counters || [];
+      const counter1 = counters[0]?.id;
+      const counter2 = counters[1]?.id;
+
       if (type === 'delay') {
-        const orgId = hospitals[0]?.id || 'harbour';
-        const counterId = 'c1';
-        await api.setCounterDelay(counterId, { minutes: 15, reason: 'Emergency phone consult' });
-        notify.success('Scenario executed: Doctor delayed by 15m');
-        logAction('Scenario: Delay', 'Set Room 1 delay to 15m');
+        if (!counter1) { notify.error('No counter found for delay scenario'); return; }
+        // F-13: use role:'admin' for these calls
+        await api.setCounterDelay(counter1, { minutes: 15, reason: 'Emergency phone consult' }, { role: 'admin' });
+        notify.success(`Scenario executed: Doctor delayed 15m on ${counters[0]?.name || counter1}`);
+        logAction('Scenario: Delay', `Set ${counters[0]?.name || 'Desk 1'} delay to 15m`);
       } else if (type === 'open-c2') {
-        const counterId = 'c2';
-        await api.setCounterState(counterId, { state: 'open' });
-        notify.success('Scenario executed: Opened Counter 2');
-        logAction('Scenario: Open Counter', 'Room 2 opened for consultations');
+        if (!counter2) { notify.error('No second counter found'); return; }
+        await api.setCounterState(counter2, { state: 'open' }, { role: 'admin' });
+        notify.success(`Scenario executed: Opened ${counters[1]?.name || 'Counter 2'}`);
+        logAction('Scenario: Open Counter', `${counters[1]?.name || 'Room 2'} opened`);
       } else if (type === 'urgent') {
-        const deptId = 'gen';
-        await api.insertUrgent({ deptId, name: 'Triage Patient', reason: 'Critical breathlessness' });
+        await api.insertUrgent({ deptId, name: 'Triage Patient', reason: 'Critical breathlessness' }, { role: 'admin' });
         notify.success('Scenario executed: Urgent case inserted');
-        logAction('Scenario: Urgent Case', 'Inserted patient at the front of General OPD');
+        logAction('Scenario: Urgent Case', `Inserted patient at front of ${genDept?.name || 'General OPD'}`);
       } else if (type === 'no-show') {
-        // Create remote ticket and advance clock past deadline
-        const deptId = 'gen';
-        const orgId = hospitals[0]?.id || 'harbour';
         await api.createTicket({
-          orgId,
+          orgId: targetOrg.id,
           deptId,
           name: 'Remote Patient (No-show demo)',
           phone: '+919888800000',
@@ -234,7 +245,8 @@ export default function AdminDashboard() {
               <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-xs flex flex-col">
                 <span className="text-[10px] uppercase font-bold text-[var(--ink-faint)]">Consultation Desks</span>
                 <span className="font-heading font-black text-2xl text-[var(--brand)] mt-1 tnum">
-                  {summary?.totalCounters || 6}
+                  {/* F-25: show real count, never invent 6 */}
+                  {summary?.totalCounters ?? hospitals.reduce((acc, h) => acc + (h.departments?.reduce((da, d) => da + (d.counters?.length || 0), 0) || 0), 0) || 0}
                 </span>
                 <span className="text-[11px] text-[var(--ink-faint)] mt-0.5">Counters online</span>
               </div>
@@ -743,9 +755,12 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
   const [lng, setLng] = useState(existingOrg?.lng || 80.2450);
   const [area, setArea] = useState(existingOrg?.area || 'Mylapore');
   const [address, setAddress] = useState(existingOrg?.address || '');
-  const [staffPin, setStaffPin] = useState(existingOrg?.staffPin || '1234');
+  // F-14: never pre-fill staffPin — the backend must not return it in org responses
+  const [staffPin, setStaffPin] = useState('');
   const [defaultMin, setDefaultMin] = useState(existingOrg?.departments?.[0]?.defaultMin || 12);
   const [loading, setLoading] = useState(false);
+  // Track if user explicitly set a PIN when editing
+  const [pinChanged, setPinChanged] = useState(!existingOrg);
 
   const handleUseDemoCoords = () => {
     setLat(13.0450);
@@ -764,14 +779,19 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
     setLoading(true);
     try {
       if (existingOrg) {
-        await api.updateOrg(existingOrg.id, {
+        const payload = {
           name: name.trim(),
           lat: Number(lat),
           lng: Number(lng),
           area: area.trim(),
           address: address.trim(),
-          staffPin: staffPin.trim(),
-        });
+          defaultMin: Number(defaultMin),
+        };
+        // F-14: only send staffPin when admin explicitly changed it
+        if (pinChanged && staffPin.trim()) {
+          payload.staffPin = staffPin.trim();
+        }
+        await api.updateOrg(existingOrg.id, payload);
         notify.success('Hospital updated successfully');
       } else {
         await api.createOrg({
@@ -781,6 +801,7 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
           area: area.trim(),
           address: address.trim() || `${area}, Chennai`,
           staffPin: staffPin.trim() || '1234',
+          defaultMin: Number(defaultMin),
         });
         notify.success('New hospital created and live on map');
       }
@@ -877,13 +898,24 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
 
             <div className="flex flex-col gap-1">
               <label className="text-xs font-bold text-[var(--ink)]">Staff PIN</label>
-              <input
-                type="text"
-                value={staffPin}
-                onChange={(e) => setStaffPin(e.target.value)}
-                placeholder="4-digit PIN"
-                className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold text-[var(--ink)]"
-              />
+              {/* F-14: only show PIN field for create, or if editing and admin chooses to change it */}
+              {!existingOrg || pinChanged ? (
+                <input
+                  type="password"
+                  value={staffPin}
+                  onChange={(e) => setStaffPin(e.target.value)}
+                  placeholder="4-digit PIN"
+                  className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold text-[var(--ink)]"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setPinChanged(true)}
+                  className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-dashed border-[var(--border)] text-xs text-[var(--ink-faint)] text-left"
+                >
+                  •••• (click to change PIN)
+                </button>
+              )}
             </div>
           </div>
 

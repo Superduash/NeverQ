@@ -232,7 +232,8 @@ export default function HospitalView() {
 
         <div className="flex flex-col gap-3">
           {hospital.departments?.map((dept) => {
-            const status = waitStatus(dept.eta?.mid || 15);
+            // F-02: 0 is valid (idle counter), use ?? 0 not || 15
+            const status = waitStatus(dept.eta?.mid ?? 0);
             const badgeVariant = status === 'good' ? 'good' : status === 'mid' ? 'mid' : 'bad';
 
             return (

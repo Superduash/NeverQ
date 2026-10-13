@@ -6,7 +6,8 @@ import { notify } from './notify.js';
 import { getErrorMessage } from './messages.js';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+// F-23: empty VITE_API_URL → same-origin /api (no hard localhost fallback)
+const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Helper for Real API HTTP Requests
 async function request(endpoint, options = {}) {
@@ -61,7 +62,9 @@ async function request(endpoint, options = {}) {
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
+      // F-11: preserve the FULL body so callers can read err.token, err.retryAfterMs, etc.
       throw {
+        ...data,
         status: res.status,
         code: data.code || 'REQUEST_FAILED',
         message: data.message || getErrorMessage(data.code),
@@ -163,11 +166,13 @@ export const api = {
     const rush = USE_MOCK ? (mockEngine.db?.settings?.rushFactor || 1) : 1;
 
     // Timeout helper
+    // F-04: use the same geo.js formula (walk 4.5, bike 14, car 22 × road factor 1.35)
+    const ROAD_FACTOR = 1.35;
+    const SPEEDS = { walk: 4.5, bike: 14.0, car: 22.0 };
     const fetchWithTimeout = async () => {
       if (USE_MOCK) {
         await new Promise((r) => setTimeout(r, 60));
-        const speed = mode === 'walk' ? 4.5 : mode === 'bike' ? 14 : 28;
-        // Haversine fallback estimate
+        const speed = SPEEDS[mode] || SPEEDS.car;
         const lat1 = from?.lat || 13.0827;
         const lon1 = from?.lng || 80.2707;
         const lat2 = to?.lat || 13.0450;
@@ -179,13 +184,14 @@ export const api = {
           Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
           Math.sin(dLon/2) * Math.sin(dLon/2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        const km = Number((R * c).toFixed(1));
-        const minutes = Math.max(2, Math.round((km / speed) * 60 * rush));
+        const straightKm = R * c;
+        const roadKm = Number((straightKm * ROAD_FACTOR).toFixed(1));
+        const minutes = Math.max(1, Math.round((roadKm / speed) * 60 * rush));
 
         return {
           minutes,
-          km,
-          source: import.meta.env.VITE_ORS_ENABLED === 'true' ? 'route' : 'estimate',
+          km: roadKm,
+          source: 'estimate',
           label: 'approx.',
         };
       }
@@ -349,7 +355,8 @@ export const api = {
   },
 
   // POST /api/staff/urgent
-  insertUrgent: async ({ deptId, name, reason }) => {
+  // F-13: opts allows {role:'admin'} so admin dashboard doesn't trigger staff-login redirect
+  insertUrgent: async ({ deptId, name, reason }, opts = {}) => {
     const orgId = localStorage.getItem('nq-staff-org') || 'harbour';
     if (USE_MOCK) {
       await new Promise((r) => setTimeout(r, 150));
@@ -358,11 +365,13 @@ export const api = {
     return request('/staff/urgent', {
       method: 'POST',
       body: JSON.stringify({ deptId, name, reason }),
+      ...opts,
     });
   },
 
   // POST /api/staff/counters/:id/delay
-  setCounterDelay: async (counterId, { minutes, reason }) => {
+  // F-13: opts allows {role:'admin'}
+  setCounterDelay: async (counterId, { minutes, reason }, opts = {}) => {
     const orgId = localStorage.getItem('nq-staff-org') || 'harbour';
     if (USE_MOCK) {
       await new Promise((r) => setTimeout(r, 120));
@@ -371,11 +380,13 @@ export const api = {
     return request(`/staff/counters/${counterId}/delay`, {
       method: 'POST',
       body: JSON.stringify({ minutes, reason }),
+      ...opts,
     });
   },
 
   // POST /api/staff/counters/:id/state
-  setCounterState: async (counterId, { state }) => {
+  // F-13: opts allows {role:'admin'}
+  setCounterState: async (counterId, { state }, opts = {}) => {
     const orgId = localStorage.getItem('nq-staff-org') || 'harbour';
     if (USE_MOCK) {
       await new Promise((r) => setTimeout(r, 100));
@@ -384,6 +395,7 @@ export const api = {
     return request(`/staff/counters/${counterId}/state`, {
       method: 'POST',
       body: JSON.stringify({ state }),
+      ...opts,
     });
   },
 

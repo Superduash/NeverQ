@@ -18,6 +18,15 @@ export const ERROR_MESSAGES = {
   NETWORK_ERROR: 'Unable to connect to server. Check your connection.',
   LOCATION_DENIED: 'Location permission was denied. Please pick a preset or choose on map.',
   LOCATION_TIMEOUT: 'Location request timed out. Please pick a preset or choose on map.',
+  // F-24: missing codes added
+  COUNTER_BUSY: 'This counter is currently serving a patient.',
+  PHONE_BLOCKED: 'Joining is not available from this phone number.',
+  INVALID_STATE: 'This action cannot be performed in the current ticket state.',
+  INVALID_COORDS: 'Invalid or missing location coordinates.',
+  INVALID_MODE: 'Invalid travel mode specified.',
+  VALIDATION_ERROR: 'One or more fields are invalid. Please review and try again.',
+  INTERNAL: 'An internal server error occurred. Please try again.',
+  REQUEST_FAILED: 'Request failed. Please try again.',
   DEFAULT: 'An unexpected error occurred. Please try again.',
 };
 
