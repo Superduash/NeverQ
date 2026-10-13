@@ -298,7 +298,7 @@ function AppShell() {
   const shouldReduceMotion = useReducedMotion();
 
   return (
-    <div className="min-h-screen min-h-[100dvh] flex flex-col overflow-x-clip bg-[var(--bg)] text-[var(--ink)]">
+    <div className="h-screen h-[100dvh] flex flex-col overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
       <AnimatePresence mode="wait">
         <motion.main
           key={location.pathname}
@@ -306,7 +306,7 @@ function AppShell() {
           animate={{ opacity: 1, y: 0 }}
           exit={shouldReduceMotion ? { opacity: 1 } : { opacity: 0, y: -6 }}
           transition={{ duration: 0.18, ease: 'easeOut' }}
-          className="flex-1 flex flex-col"
+          className="flex-1 flex flex-col min-h-0 overflow-hidden"
         >
           <Suspense
             fallback={

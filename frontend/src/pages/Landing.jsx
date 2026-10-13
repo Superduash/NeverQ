@@ -185,12 +185,12 @@ export default function Landing() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full min-h-[100dvh] relative overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
+    <div className="flex-1 flex flex-col h-full min-h-0 relative overflow-hidden bg-[var(--bg)] text-[var(--ink)]">
       {/* ───────────── Emergency Strip ───────────── */}
       {!emergencyDismissed && (
         <aside
           aria-label="Medical emergency notice"
-          className="bg-[var(--accent)] text-white px-4 py-2 flex items-center justify-between text-xs font-semibold z-50 select-none shadow-sm"
+          className="shrink-0 bg-[var(--accent)] text-white px-4 py-2 flex items-center justify-between text-xs font-semibold z-50 select-none shadow-sm"
         >
           <div className="flex items-center gap-2">
             <ShieldAlert size={16} className="shrink-0 animate-pulse" />
@@ -219,7 +219,7 @@ export default function Landing() {
       )}
 
       {/* ───────────── Header / Top Bar ───────────── */}
-      <header className="sticky top-0 z-40 bg-[var(--surface-glass)] backdrop-blur-md border-b border-[var(--border)] px-4 py-2.5 flex items-center justify-between gap-3 shadow-sm">
+      <header className="shrink-0 sticky top-0 z-40 bg-[var(--surface-glass)] backdrop-blur-md border-b border-[var(--border)] px-4 py-2.5 flex items-center justify-between gap-3 shadow-sm">
         <div className="flex items-center gap-3">
           <Logo size={30} />
           {/* Live indicator dot */}
@@ -255,7 +255,7 @@ export default function Landing() {
 
       {/* ───────────── Pin Placement Mode Bar ───────────── */}
       {isPinMode && (
-        <div className="bg-[var(--accent)] text-white px-4 py-2 flex items-center justify-between text-xs font-bold z-40">
+        <div className="shrink-0 bg-[var(--accent)] text-white px-4 py-2 flex items-center justify-between text-xs font-bold z-40">
           <span>Tap anywhere on the map to place your location pin.</span>
           <button
             type="button"
@@ -268,11 +268,11 @@ export default function Landing() {
       )}
 
       {/* ───────────── Main Content: Desktop Split / Mobile View ───────────── */}
-      <div className="flex-1 flex flex-col lg:flex-row relative overflow-hidden">
-        {/* LEFT PANEL: Controls & Hospital List (Desktop 420px, Mobile Sheet / List View) */}
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0 relative overflow-hidden">
+        {/* LEFT PANEL: Controls & Hospital List (Desktop 380px, Mobile Sheet / List View) */}
         <section
           className={`
-            lg:w-[420px] lg:border-r border-[var(--border)] bg-[var(--bg)] flex flex-col z-30
+            lg:w-[380px] lg:max-w-[400px] shrink-0 border-r border-[var(--border)] bg-[var(--bg)] flex flex-col h-full min-h-0 z-30
             ${mobileView === 'list' ? 'flex flex-1 overflow-y-auto' : 'hidden lg:flex overflow-y-auto'}
           `}
         >
@@ -304,7 +304,7 @@ export default function Landing() {
             {/* Department Chips */}
             <div className="relative">
               <div
-                className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1"
+                className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1.5 -mx-1 px-1 scroll-smooth"
                 role="tablist"
                 aria-label="Department filters"
               >
@@ -602,7 +602,7 @@ export default function Landing() {
         </section>
 
         {/* RIGHT PANEL: MapLibre Map Container */}
-        <section className={`flex-1 relative ${mobileView === 'list' ? 'hidden lg:block' : 'block h-full'}`}>
+        <section className={`flex-1 h-full min-h-0 relative overflow-hidden ${mobileView === 'list' ? 'hidden lg:block' : 'block'}`}>
           <MapComponent
             hospitals={enrichedHospitals}
             selectedId={selectedHospitalId}
@@ -809,6 +809,7 @@ function MapComponent({
   const mapRef = useRef(null);
   const markersRef = useRef(new Map());
   const userMarkerRef = useRef(null);
+  const hasInitialFitRef = useRef(false);
 
   // Initialize MapLibre
   useEffect(() => {
@@ -820,12 +821,16 @@ function MapComponent({
         container: containerRef.current,
         style: mapStyle,
         center: [DEMO_HOME.lng, DEMO_HOME.lat],
-        zoom: 12,
+        zoom: 11.8,
         attributionControl: false,
       });
 
       mapInstance.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
       mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+      mapInstance.on('load', () => {
+        mapInstance.resize();
+      });
 
       mapInstance.on('click', (e) => {
         if (isPinMode && onPinPlaced) {
@@ -843,7 +848,7 @@ function MapComponent({
       toast.error('Could not render interactive map. Showing list view.');
     }
 
-    // ResizeObserver ensures no blank map
+    // ResizeObserver ensures canvas always fills parent dimensions
     const ro = new ResizeObserver(() => {
       mapInstance?.resize();
     });
@@ -851,7 +856,7 @@ function MapComponent({
 
     return () => {
       ro.disconnect();
-      markersRef.current.forEach((m) => m.remove());
+      markersRef.current.forEach((m) => m.marker.remove());
       markersRef.current.clear();
       userMarkerRef.current?.remove();
       mapInstance?.remove();
@@ -865,7 +870,35 @@ function MapComponent({
     mapRef.current.getCanvas().style.cursor = isPinMode ? 'crosshair' : '';
   }, [isPinMode]);
 
-  // Update Hospital Markers
+  // Initial fitBounds once hospitals load
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || hospitals.length === 0 || hasInitialFitRef.current) return;
+
+    const bounds = new maplibregl.LngLatBounds();
+    hospitals.forEach((h) => bounds.extend([h.lng, h.lat]));
+    if (userLocation) bounds.extend([userLocation.lng, userLocation.lat]);
+
+    map.fitBounds(bounds, {
+      padding: { top: 60, bottom: 60, left: 60, right: 60 },
+      maxZoom: 13.5,
+      duration: 800,
+    });
+    hasInitialFitRef.current = true;
+  }, [hospitals, userLocation]);
+
+  // Pan to selected hospital when clicked from list or marker
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !selectedId) return;
+
+    const target = hospitals.find((h) => h.id === selectedId);
+    if (target) {
+      map.easeTo({ center: [target.lng, target.lat], zoom: Math.max(map.getZoom(), 13), duration: 500 });
+    }
+  }, [selectedId, hospitals]);
+
+  // Update Hospital Markers (isolated wrapper + compact pill)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -874,9 +907,9 @@ function MapComponent({
     const activeIds = new Set(hospitals.map((h) => h.id));
 
     // Remove old markers
-    currentMarkers.forEach((marker, id) => {
+    currentMarkers.forEach((markerObj, id) => {
       if (!activeIds.has(id)) {
-        marker.remove();
+        markerObj.marker.remove();
         currentMarkers.delete(id);
       }
     });
@@ -886,33 +919,42 @@ function MapComponent({
       let markerObj = currentMarkers.get(h.id);
 
       if (!markerObj) {
-        const el = document.createElement('div');
-        el.className = 'nq-marker-pill';
-        el.addEventListener('click', (e) => {
+        // Outer wrapper (MapLibre handles positioning & transforms on this element)
+        const wrapper = document.createElement('div');
+        wrapper.className = 'nq-marker-container';
+
+        // Inner compact pill (visual styling exclusively on this element)
+        const pill = document.createElement('div');
+        pill.className = 'nq-marker-pill';
+        wrapper.appendChild(pill);
+
+        wrapper.addEventListener('click', (e) => {
           e.stopPropagation();
           onSelectHospital(h.id);
         });
 
-        const marker = new maplibregl.Marker({ element: el })
+        const marker = new maplibregl.Marker({ element: wrapper, anchor: 'center' })
           .setLngLat([h.lng, h.lat])
           .addTo(map);
 
-        markerObj = { marker, el };
+        markerObj = { marker, wrapper, pill };
         currentMarkers.set(h.id, markerObj);
       }
 
-      // Update content & classes
+      // Update position
+      markerObj.marker.setLngLat([h.lng, h.lat]);
+
+      // Update content & styling on the inner pill
       const isSelected = h.id === selectedId;
-      markerObj.el.className = `nq-marker-pill ${isSelected ? 'selected' : ''}`;
-      markerObj.el.style.backgroundColor =
+      markerObj.pill.className = `nq-marker-pill ${isSelected ? 'selected' : ''}`;
+      markerObj.pill.style.backgroundColor =
         h.status === 'good' ? 'var(--wait-good)' :
         h.status === 'mid' ? 'var(--wait-mid)' :
         'var(--wait-bad)';
-      markerObj.el.style.color = '#ffffff';
+      markerObj.pill.style.color = '#ffffff';
 
-      markerObj.el.innerHTML = `
-        <span>~${h.selectedDept?.eta?.mid || 15}m</span>
-      `;
+      markerObj.pill.innerHTML = `<span>~${h.selectedDept?.eta?.mid || 15}m</span>`;
+      markerObj.wrapper.style.zIndex = isSelected ? '20' : '1';
     });
   }, [hospitals, selectedId, onSelectHospital]);
 
@@ -928,9 +970,14 @@ function MapComponent({
     }
 
     if (!userMarkerRef.current) {
-      const el = document.createElement('div');
-      el.className = 'nq-user-dot';
-      userMarkerRef.current = new maplibregl.Marker({ element: el })
+      const wrapper = document.createElement('div');
+      wrapper.className = 'nq-marker-container';
+
+      const dot = document.createElement('div');
+      dot.className = 'nq-user-dot';
+      wrapper.appendChild(dot);
+
+      userMarkerRef.current = new maplibregl.Marker({ element: wrapper, anchor: 'center' })
         .setLngLat([userLocation.lng, userLocation.lat])
         .addTo(map);
     } else {
@@ -941,7 +988,7 @@ function MapComponent({
   return (
     <div
       ref={containerRef}
-      className="w-full h-full min-h-[350px] relative"
+      className="absolute inset-0 w-full h-full min-h-[300px]"
       aria-label="Interactive hospital map"
     />
   );
