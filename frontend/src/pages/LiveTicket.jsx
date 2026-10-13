@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useLiveData, useSocketRoom } from '../lib/socket.js';
-import { storage, DEMO_HOME, LOCATION_PRESETS, estimateTravel, waitStatus } from '../lib/mock.js';
+import { storage, DEMO_HOME, DEFAULT_SAVED_HOME, LOCATION_PRESETS, estimateTravel, waitStatus } from '../lib/mock.js';
 import { notify } from '../lib/notify.js';
 import { NOTIFICATION_MESSAGES } from '../lib/messages.js';
 import {
@@ -36,8 +36,14 @@ export default function LiveTicket() {
   const activeStored = useMemo(() => storage.getActiveTicket(), []);
   const token = routeToken || activeStored?.token;
 
-  const [travelMode, setTravelMode] = useState('car');
-  const [userLocation, setUserLocation] = useState(DEMO_HOME);
+  const [userLocation, setUserLocation] = useState(() => {
+    const lastPreset = storage.getLastLocationPreset();
+    if (lastPreset === 'saved_home') {
+      return storage.getSavedHome() || DEFAULT_SAVED_HOME;
+    }
+    const preset = LOCATION_PRESETS.find((p) => p.id === lastPreset);
+    return preset || DEMO_HOME;
+  });
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [arriving, setArriving] = useState(false);
@@ -518,7 +524,11 @@ export default function LiveTicket() {
               Travel-Aware Leave-By Plan
             </h3>
             <span className="text-[11px] font-semibold text-[var(--brand)] tnum">
-              ~{travel.minutes} min travel ({travel.km} km)
+              {userLocation?.type === 'gps'
+                ? `~${travel.minutes} min travel (${travel.km} km away)`
+                : userLocation?.type === 'saved'
+                ? `~${travel.minutes} min travel (${travel.km} km from saved Home)`
+                : `~${travel.minutes} min (Chennai demo area)`}
             </span>
           </div>
 

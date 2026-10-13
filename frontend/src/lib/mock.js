@@ -6,25 +6,39 @@ export const WAIT_THRESHOLDS = {
 };
 
 export const DEMO_HOME = {
-  id: 'home',
+  id: 'demo',
   lat: 13.0450,
   lng: 80.2450,
-  label: 'Home (~6 km away)',
+  label: 'Chennai demo area',
+  type: 'demo',
+  isDemo: true,
+};
+
+export const DEFAULT_SAVED_HOME = {
+  id: 'saved_home',
+  lat: 13.0450,
+  lng: 80.2450,
+  label: 'Saved Home',
+  type: 'saved',
+  isSaved: true,
 };
 
 export const LOCATION_PRESETS = [
   DEMO_HOME,
+  DEFAULT_SAVED_HOME,
   {
     id: 'lakeside',
     lat: 13.0368,
     lng: 80.2676,
     label: 'At Lakeside General',
+    type: 'preset',
   },
   {
     id: 'adyar',
     lat: 13.0067,
     lng: 80.2570,
     label: 'At Adyar Riverside',
+    type: 'preset',
   },
 ];
 
@@ -369,15 +383,34 @@ export const storage = {
 
   getLastLocationPreset() {
     try {
-      return sessionStorage.getItem('nq-loc-preset') || 'home';
+      return sessionStorage.getItem('nq-loc-preset') || 'demo';
     } catch {
-      return 'home';
+      return 'demo';
     }
   },
 
   setLastLocationPreset(presetId) {
     try {
       sessionStorage.setItem('nq-loc-preset', presetId);
+    } catch {}
+  },
+
+  getSavedHome() {
+    try {
+      const raw = localStorage.getItem('nq-saved-home');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  setSavedHome(home) {
+    try {
+      if (home) {
+        localStorage.setItem('nq-saved-home', JSON.stringify(home));
+      } else {
+        localStorage.removeItem('nq-saved-home');
+      }
     } catch {}
   },
 

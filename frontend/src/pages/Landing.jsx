@@ -11,7 +11,7 @@ import {
   ChevronUp, ChevronDown
 } from 'lucide-react';
 import {
-  WAIT_THRESHOLDS, DEMO_HOME, LOCATION_PRESETS, ALL_DEPARTMENTS,
+  WAIT_THRESHOLDS, DEMO_HOME, DEFAULT_SAVED_HOME, LOCATION_PRESETS, ALL_DEPARTMENTS,
   estimateTravel, waitStatus, storage
 } from '../lib/mock.js';
 import { Logo } from '../main.jsx';
@@ -45,7 +45,14 @@ export default function Landing() {
   const [selectedDept, setSelectedDept] = useState('All');
   const [sortMode, setSortMode] = useState('nearest'); // 'nearest' | 'fastest'
   const [travelMode, setTravelMode] = useState('car'); // 'walk' | 'bike' | 'car'
-  const [userLocation, setUserLocation] = useState(DEMO_HOME);
+  const [userLocation, setUserLocation] = useState(() => {
+    const lastPreset = storage.getLastLocationPreset();
+    if (lastPreset === 'saved_home') {
+      return storage.getSavedHome() || DEFAULT_SAVED_HOME;
+    }
+    const preset = LOCATION_PRESETS.find((p) => p.id === lastPreset);
+    return preset || DEMO_HOME;
+  });
   const [isPinMode, setIsPinMode] = useState(false);
   const [showLocationMenu, setShowLocationMenu] = useState(false);
   const [selectedHospitalId, setSelectedHospitalId] = useState(null);
@@ -155,6 +162,10 @@ export default function Landing() {
   const enrichedHospitals = useMemo(() => {
     if (!rawHospitals) return [];
     const origin = userLocation || DEMO_HOME;
+    const isGPS = userLocation?.type === 'gps' || userLocation?.id === 'gps';
+    const isSavedHome = userLocation?.type === 'saved' || userLocation?.id === 'saved_home';
+    const isCustomPin = userLocation?.type === 'pin' || userLocation?.id === 'custom';
+    const hasRealDistance = isGPS || isSavedHome || isCustomPin;
 
     return rawHospitals.map((h) => {
       const travel = estimateTravel(origin, { lat: h.lat, lng: h.lng }, travelMode);
@@ -166,6 +177,24 @@ export default function Landing() {
       const waitMid = deptObj?.eta?.mid || 15;
       const totalTime = travel.minutes + waitMid;
 
+      let distanceLabel = '';
+      let travelLabel = '';
+
+      if (isGPS) {
+        distanceLabel = `${travel.km} km away`;
+        travelLabel = `~${travel.minutes} min (${travelMode})`;
+      } else if (isSavedHome) {
+        distanceLabel = `${travel.km} km from saved Home`;
+        travelLabel = `~${travel.minutes} min (saved Home)`;
+      } else if (isCustomPin) {
+        distanceLabel = `${travel.km} km from pin`;
+        travelLabel = `~${travel.minutes} min from pin`;
+      } else {
+        // Never imply a real home-to-hospital distance from demo coordinates
+        distanceLabel = 'Chennai demo area';
+        travelLabel = 'GPS needed for distance';
+      }
+
       return {
         ...h,
         selectedDept: deptObj,
@@ -174,6 +203,12 @@ export default function Landing() {
         totalMin: totalTime,
         status: waitStatus(waitMid),
         isSaved: savedOrgIds.includes(h.id),
+        hasRealDistance,
+        isGPS,
+        isSavedHome,
+        isCustomPin,
+        distanceLabel,
+        travelLabel,
       };
     }).sort((a, b) => {
       if (sortMode === 'fastest') {
@@ -225,6 +260,7 @@ export default function Landing() {
     if (coords && typeof coords.lat === 'number' && typeof coords.lng === 'number') {
       setUserLocation({
         id: 'custom',
+        type: 'pin',
         lat: coords.lat,
         lng: coords.lng,
         label: 'Custom Pin on Map',
@@ -234,27 +270,51 @@ export default function Landing() {
     }
   }, []);
 
+  const handleSaveCurrentAsHome = useCallback((target) => {
+    const loc = target || userLocation;
+    if (!loc?.lat || !loc?.lng) return;
+    const saved = {
+      id: 'saved_home',
+      type: 'saved',
+      lat: loc.lat,
+      lng: loc.lng,
+      label: 'Saved Home',
+      isSaved: true,
+    };
+    storage.setSavedHome(saved);
+    setUserLocation(saved);
+    storage.setLastLocationPreset('saved_home');
+    setShowLocationMenu(false);
+    notify.success('Saved Home location updated');
+  }, [userLocation]);
+
   // Location handler: Geolocation
   const requestUserLocation = () => {
     setShowLocationMenu(false);
     if (!navigator.geolocation) {
-      notify.error('Geolocation is not supported by your browser');
+      notify.error('Geolocation is not supported by your browser. Using Chennai demo area.');
       setShowLocationMenu(true);
       return;
     }
-    notify.info('Requesting current location...');
+    notify.info('Requesting current GPS location...');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setUserLocation({
           id: 'gps',
+          type: 'gps',
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
-          label: 'Your Current Location',
+          label: 'Your GPS Location',
+          isGPS: true,
         });
-        notify.success(NOTIFICATION_MESSAGES.LOCATION_SET);
+        storage.setLastLocationPreset('gps');
+        notify.success('GPS location active — showing live distance');
       },
-      () => {
-        notify.error(NOTIFICATION_MESSAGES.LOCATION_DENIED);
+      (err) => {
+        const msg = err.code === 1
+          ? 'Location permission not granted. Showing Chennai demo area.'
+          : 'Could not obtain GPS location. Showing Chennai demo area.';
+        notify.error(msg);
         setShowLocationMenu(true);
       },
       { timeout: 8000, enableHighAccuracy: true }
@@ -566,11 +626,28 @@ export default function Landing() {
                         <MapPin size={14} />
                       </div>
                       <div className="min-w-0">
-                        <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block">
-                          Origin Location
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block">
+                            Origin Location
+                          </span>
+                          {userLocation?.isGPS && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-[var(--wait-good-bg)] text-[var(--wait-good-text)] text-[9px] font-bold uppercase">
+                              GPS Active
+                            </span>
+                          )}
+                          {userLocation?.isSaved && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-[var(--brand)]/15 text-[var(--brand)] text-[9px] font-bold uppercase">
+                              Saved Home
+                            </span>
+                          )}
+                          {userLocation?.isDemo && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-[var(--surface-2)] text-[var(--ink-muted)] text-[9px] font-bold uppercase">
+                              Demo Area
+                            </span>
+                          )}
+                        </div>
                         <span className="text-xs font-semibold text-[var(--ink)] block truncate">
-                          {userLocation?.label || 'Home'}
+                          {userLocation?.label || 'Chennai demo area'}
                         </span>
                       </div>
                     </div>
@@ -617,9 +694,20 @@ export default function Landing() {
                           </button>
                         </div>
 
+                        {userLocation?.type === 'pin' && (
+                          <button
+                            type="button"
+                            onClick={() => handleSaveCurrentAsHome()}
+                            className="p-1.5 rounded-xl bg-[var(--brand)]/10 text-[var(--brand)] text-xs font-semibold hover:bg-[var(--brand)]/20 transition-colors flex items-center justify-center gap-1.5"
+                          >
+                            <CheckCircle2 size={13} />
+                            <span>Save Current Pin as Home</span>
+                          </button>
+                        )}
+
                         <div className="pt-1">
                           <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block mb-1">
-                            Demo Presets
+                            Locations & Presets
                           </span>
                           <div className="flex flex-col gap-1">
                             {LOCATION_PRESETS.map((p) => {
@@ -629,16 +717,34 @@ export default function Landing() {
                                   key={p.id}
                                   type="button"
                                   onClick={() => {
-                                    setUserLocation(p);
+                                    if (p.id === 'saved_home') {
+                                      const saved = storage.getSavedHome() || DEFAULT_SAVED_HOME;
+                                      setUserLocation(saved);
+                                      storage.setLastLocationPreset('saved_home');
+                                    } else {
+                                      setUserLocation(p);
+                                      storage.setLastLocationPreset(p.id);
+                                    }
                                     setShowLocationMenu(false);
-                                    storage.setLastLocationPreset(p.id);
                                   }}
                                   className={`p-2 rounded-xl text-left flex items-center justify-between text-xs transition-colors ${isSelected
                                       ? 'bg-[var(--surface)] border border-[var(--brand)] font-bold text-[var(--brand)] shadow-xs'
                                       : 'hover:bg-[var(--surface)] border border-transparent font-medium text-[var(--ink)]'
                                     }`}
                                 >
-                                  <span className="truncate">{p.label}</span>
+                                  <div className="flex items-center gap-1.5 truncate">
+                                    <span className="truncate">{p.label}</span>
+                                    {p.isSaved && (
+                                      <span className="px-1.5 py-0.2 rounded-md bg-[var(--brand)]/10 text-[var(--brand)] text-[9px] font-bold uppercase shrink-0">
+                                        Saved
+                                      </span>
+                                    )}
+                                    {p.isDemo && (
+                                      <span className="px-1.5 py-0.2 rounded-md bg-[var(--surface-2)] text-[var(--ink-muted)] text-[9px] font-bold uppercase shrink-0">
+                                        Demo
+                                      </span>
+                                    )}
+                                  </div>
                                   {isSelected && <CheckCircle2 size={13} className="shrink-0 text-[var(--brand)]" />}
                                 </button>
                               );
@@ -796,11 +902,28 @@ export default function Landing() {
                     <MapPin size={14} />
                   </div>
                   <div className="min-w-0">
-                    <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block">
-                      Origin Location
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block">
+                        Origin Location
+                      </span>
+                      {userLocation?.isGPS && (
+                        <span className="px-1.5 py-0.2 rounded-md bg-[var(--wait-good-bg)] text-[var(--wait-good-text)] text-[9px] font-bold uppercase">
+                          GPS Active
+                        </span>
+                      )}
+                      {userLocation?.isSaved && (
+                        <span className="px-1.5 py-0.2 rounded-md bg-[var(--brand)]/15 text-[var(--brand)] text-[9px] font-bold uppercase">
+                          Saved Home
+                        </span>
+                      )}
+                      {userLocation?.isDemo && (
+                        <span className="px-1.5 py-0.2 rounded-md bg-[var(--surface-2)] text-[var(--ink-muted)] text-[9px] font-bold uppercase">
+                          Demo Area
+                        </span>
+                      )}
+                    </div>
                     <span className="text-xs font-semibold text-[var(--ink)] block truncate">
-                      {userLocation?.label || 'Home'}
+                      {userLocation?.label || 'Chennai demo area'}
                     </span>
                   </div>
                 </div>
@@ -848,9 +971,20 @@ export default function Landing() {
                       </button>
                     </div>
 
+                    {userLocation?.type === 'pin' && (
+                      <button
+                        type="button"
+                        onClick={() => handleSaveCurrentAsHome()}
+                        className="p-1.5 rounded-xl bg-[var(--brand)]/10 text-[var(--brand)] text-xs font-semibold hover:bg-[var(--brand)]/20 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <CheckCircle2 size={13} />
+                        <span>Save Current Pin as Home</span>
+                      </button>
+                    )}
+
                     <div className="pt-1">
                       <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider block mb-1">
-                        Demo Presets
+                        Locations & Presets
                       </span>
                       <div className="flex flex-col gap-1">
                         {LOCATION_PRESETS.map((p) => {
@@ -860,16 +994,34 @@ export default function Landing() {
                               key={p.id}
                               type="button"
                               onClick={() => {
-                                setUserLocation(p);
+                                if (p.id === 'saved_home') {
+                                  const saved = storage.getSavedHome() || DEFAULT_SAVED_HOME;
+                                  setUserLocation(saved);
+                                  storage.setLastLocationPreset('saved_home');
+                                } else {
+                                  setUserLocation(p);
+                                  storage.setLastLocationPreset(p.id);
+                                }
                                 setShowLocationMenu(false);
-                                storage.setLastLocationPreset(p.id);
                               }}
                               className={`p-2 rounded-xl text-left flex items-center justify-between text-xs transition-colors ${isSelected
                                   ? 'bg-[var(--surface)] border border-[var(--brand)] font-bold text-[var(--brand)] shadow-xs'
                                   : 'hover:bg-[var(--surface)] border border-transparent font-medium text-[var(--ink)]'
                                 }`}
                             >
-                              <span className="truncate">{p.label}</span>
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span className="truncate">{p.label}</span>
+                                {p.isSaved && (
+                                  <span className="px-1.5 py-0.2 rounded-md bg-[var(--brand)]/10 text-[var(--brand)] text-[9px] font-bold uppercase shrink-0">
+                                    Saved
+                                  </span>
+                                )}
+                                {p.isDemo && (
+                                  <span className="px-1.5 py-0.2 rounded-md bg-[var(--surface-2)] text-[var(--ink-muted)] text-[9px] font-bold uppercase shrink-0">
+                                    Demo
+                                  </span>
+                                )}
+                              </div>
                               {isSelected && <CheckCircle2 size={13} className="shrink-0 text-[var(--brand)]" />}
                             </button>
                           );
@@ -956,9 +1108,13 @@ export default function Landing() {
                   </span>
                 </div>
                 <div className="p-2 rounded-xl bg-[var(--surface-2)]">
-                  <span className="text-[10px] text-[var(--ink-faint)] block">Travel ({travelMode})</span>
+                  <span className="text-[10px] text-[var(--ink-faint)] block">
+                    {selectedHospital.hasRealDistance ? `Travel (${travelMode})` : 'Location Mode'}
+                  </span>
                   <span className="font-bold text-[var(--brand)] tnum">
-                    ~{selectedHospital.travelMin}m ({selectedHospital.distanceKm} km)
+                    {selectedHospital.hasRealDistance
+                      ? `~${selectedHospital.travelMin}m (${selectedHospital.distanceKm} km)`
+                      : 'Chennai demo area'}
                   </span>
                 </div>
               </div>
@@ -1240,12 +1396,25 @@ function HospitalCardItem({
         </div>
 
         <div className="text-right tnum shrink-0">
-          <span className="text-xs font-semibold text-[var(--brand)] block">
-            ~{hospital.travelMin} min ({travelMode})
-          </span>
-          <span className="text-[10px] text-[var(--ink-faint)] block">
-            {hospital.distanceKm} km away
-          </span>
+          {hospital.hasRealDistance ? (
+            <>
+              <span className="text-xs font-semibold text-[var(--brand)] block">
+                {hospital.travelLabel}
+              </span>
+              <span className="text-[10px] text-[var(--ink-faint)] block">
+                {hospital.distanceLabel}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="text-xs font-semibold text-[var(--ink-muted)] block">
+                Chennai demo area
+              </span>
+              <span className="text-[10px] text-[var(--brand)] block font-medium">
+                GPS needed for distance
+              </span>
+            </>
+          )}
         </div>
       </div>
 
@@ -1327,9 +1496,13 @@ function HospitalSheetDetails({ hospital, travelMode, onClose, onJoin, onToggleS
       {/* Travel & Hours Info */}
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="p-2.5 rounded-2xl bg-[var(--surface-2)]">
-          <span className="text-[10px] text-[var(--ink-faint)] block">Estimated Travel</span>
+          <span className="text-[10px] text-[var(--ink-faint)] block">
+            {hospital.hasRealDistance ? 'Estimated Travel' : 'Location Mode'}
+          </span>
           <span className="font-bold text-[var(--brand)] tnum">
-            ~{hospital.travelMin} min ({hospital.distanceKm} km approx.)
+            {hospital.hasRealDistance
+              ? `${hospital.travelLabel} · ${hospital.distanceLabel}`
+              : 'Chennai demo area · Tap GPS for live distance'}
           </span>
         </div>
         <div className="p-2.5 rounded-2xl bg-[var(--surface-2)]">

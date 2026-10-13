@@ -1,6 +1,29 @@
 import maplibregl from 'maplibre-gl';
 
 /**
+ * Returns a clear, unambiguous label for the origin marker.
+ * - Demo coordinates -> 'Chennai demo area'
+ * - Manually saved home -> 'Saved Home'
+ * - Real GPS -> 'Your GPS Location'
+ */
+export function getOriginMarkerLabel(location) {
+  if (!location) return 'Chennai demo area';
+  if (location.type === 'demo' || location.id === 'demo' || location.isDemo) {
+    return 'Chennai demo area';
+  }
+  if (location.type === 'saved' || location.id === 'saved_home' || location.isSaved) {
+    return 'Saved Home';
+  }
+  if (location.type === 'gps' || location.id === 'gps' || location.isGPS) {
+    return 'Your GPS Location';
+  }
+  if (location.type === 'pin' || location.id === 'custom') {
+    return 'Custom Pin on Map';
+  }
+  return location.label || 'Origin Location';
+}
+
+/**
  * Creates or updates the user location origin pin on MapLibre.
  */
 export function createUserMarker({
@@ -9,13 +32,16 @@ export function createUserMarker({
   draggable = false,
   onDragEnd = null,
 }) {
+  const displayLabel = getOriginMarkerLabel(location);
+  const isDemo = location?.type === 'demo' || location?.id === 'demo' || location?.isDemo;
+
   const wrapper = document.createElement('div');
-  wrapper.className = `nq-user-marker ${draggable ? 'is-draggable' : ''}`;
-  wrapper.setAttribute('title', location.label || 'Your Origin Location');
+  wrapper.className = `nq-user-marker ${draggable ? 'is-draggable' : ''} ${isDemo ? 'is-demo-origin' : ''}`;
+  wrapper.setAttribute('title', displayLabel);
 
   const badge = document.createElement('div');
   badge.className = 'nq-user-badge';
-  badge.innerHTML = `<span>📍</span><span>${location.label || 'Your Location'}</span>`;
+  badge.innerHTML = `<span>📍</span><span>${displayLabel}</span>`;
   wrapper.appendChild(badge);
 
   const pinWrap = document.createElement('div');
@@ -57,8 +83,12 @@ export function updateUserMarker({
   markerObj,
   location,
 }) {
+  const displayLabel = getOriginMarkerLabel(location);
   markerObj.marker.setLngLat([location.lng, location.lat]);
   if (markerObj.badge) {
-    markerObj.badge.innerHTML = `<span>📍</span><span>${location.label || 'Your Location'}</span>`;
+    markerObj.badge.innerHTML = `<span>📍</span><span>${displayLabel}</span>`;
+  }
+  if (markerObj.wrapper) {
+    markerObj.wrapper.setAttribute('title', displayLabel);
   }
 }

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useLiveData } from '../lib/socket.js';
-import { storage, DEMO_HOME, estimateTravel, waitStatus } from '../lib/mock.js';
+import { storage, DEMO_HOME, DEFAULT_SAVED_HOME, LOCATION_PRESETS, estimateTravel, waitStatus } from '../lib/mock.js';
 import { notify } from '../lib/notify.js';
 import { NOTIFICATION_MESSAGES } from '../lib/messages.js';
 import { shareLink } from '../lib/utils.js';
@@ -21,6 +21,19 @@ export default function HospitalView() {
 
   const [travelMode, setTravelMode] = useState('car');
   const [savedOrgIds, setSavedOrgIds] = useState(() => storage.getSavedOrgs());
+
+  const userOrigin = useMemo(() => {
+    const lastPreset = storage.getLastLocationPreset();
+    if (lastPreset === 'saved_home') {
+      return storage.getSavedHome() || DEFAULT_SAVED_HOME;
+    }
+    const preset = LOCATION_PRESETS.find((p) => p.id === lastPreset);
+    return preset || DEMO_HOME;
+  }, []);
+
+  const isGPS = userOrigin?.type === 'gps' || userOrigin?.id === 'gps';
+  const isSavedHome = userOrigin?.type === 'saved' || userOrigin?.id === 'saved_home';
+  const hasRealDistance = isGPS || isSavedHome;
 
   const fetcher = useCallback(async () => {
     return api.getOrg(orgId);
@@ -47,8 +60,8 @@ export default function HospitalView() {
 
   const travel = useMemo(() => {
     if (!hospital) return { km: 0, minutes: 0 };
-    return estimateTravel(DEMO_HOME, { lat: hospital.lat, lng: hospital.lng }, travelMode);
-  }, [hospital, travelMode]);
+    return estimateTravel(userOrigin, { lat: hospital.lat, lng: hospital.lng }, travelMode);
+  }, [hospital, travelMode, userOrigin]);
 
   const handleShare = () => {
     if (!hospital) return;
@@ -139,9 +152,15 @@ export default function HospitalView() {
             <Clock size={13} className="text-[var(--ink)]" />
             <span className="font-medium text-[var(--ink)]">{hospital.hours || 'Open today'}</span>
           </span>
-          <span className="tnum font-medium text-[var(--brand)]">
-            ~{travel.minutes} min ({travel.km} km away)
-          </span>
+          {hasRealDistance ? (
+            <span className="tnum font-medium text-[var(--brand)]">
+              ~{travel.minutes} min ({travel.km} km {isSavedHome ? 'from saved Home' : 'away'})
+            </span>
+          ) : (
+            <span className="font-medium text-[var(--ink-muted)]">
+              Chennai demo area · GPS needed for live distance
+            </span>
+          )}
         </div>
       </div>
 
@@ -184,7 +203,7 @@ export default function HospitalView() {
           <MapView
             markers={[hospital]}
             selected={hospital.id}
-            user={DEMO_HOME}
+            user={userOrigin}
             mode="browse"
             interactive={true}
             center={[hospital.lng, hospital.lat]}

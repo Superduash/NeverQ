@@ -462,7 +462,7 @@ export function MapView({
 
       {/* Screen Reader Announcement Region */}
       <div className="sr-only" aria-live="polite">
-        Interactive map showing {markers.length} hospitals. Origin set to {user?.label || 'Home'}.
+        Interactive map showing {markers.length} hospitals. Origin set to {user?.label || 'Chennai demo area'}.
       </div>
 
       {/* Fallback Banner for WebGL Unavailable */}
