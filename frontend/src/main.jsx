@@ -15,6 +15,10 @@ import { NotFound } from './components/layout/NotFound.jsx';
 import { ErrorBoundary } from './components/layout/ErrorBoundary.jsx';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './index.css';
+import { initPWA } from './lib/pwa.js';
+
+// Initialize PWA service worker updater
+initPWA();
 
 // Re-export api and live hooks for backward and module compatibility
 export { api, useLiveData, useSocketRoom };
@@ -97,6 +101,7 @@ const StaffLoginLazy = lazy(() => import('./pages/StaffLogin.jsx'));
 const StaffDashboardLazy = lazy(() => import('./pages/StaffDashboard.jsx'));
 const AdminLoginLazy = lazy(() => import('./pages/AdminLogin.jsx'));
 const AdminDashboardLazy = lazy(() => import('./pages/AdminDashboard.jsx'));
+const BoardLazy = lazy(() => import('./pages/Board.jsx'));
 
 function AppShell() {
   const location = useLocation();
@@ -126,7 +131,7 @@ function AppShell() {
               <Route path="/hospital/:orgId" element={<HospitalViewLazy />} />
               <Route path="/join/:orgId/:deptId" element={<JoinQueueLazy />} />
               <Route path="/t/:token" element={<LiveTicketLazy />} />
-              <Route path="/board/:orgId" element={<RouteStub name="Public Wait Board" />} />
+              <Route path="/board/:orgId" element={<BoardLazy />} />
             </Route>
 
             {/* Public Staff & Admin Login */}

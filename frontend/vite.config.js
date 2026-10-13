@@ -51,7 +51,15 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: false,
-      includeAssets: ["logo.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png"],
+      includeAssets: [
+        "favicon.png",
+        "logo.png",
+        "logo.svg",
+        "icons/icon-192.png",
+        "icons/icon-512.png",
+        "icons/maskable-512.png",
+        "icons/apple-touch-icon.png",
+      ],
       manifest: {
         name: "NeverQ",
         short_name: "NeverQ",

@@ -88,6 +88,16 @@ export const api = {
     return request(`/orgs/${id}`);
   },
 
+  // GET /api/orgs/:id/board?deptId (Phase 10.1 Public Wait Board)
+  getBoard: async (orgId, deptId = null) => {
+    if (USE_MOCK) {
+      await new Promise((r) => setTimeout(r, 100));
+      return mockEngine.getBoard(orgId, deptId);
+    }
+    const query = deptId ? `?deptId=${encodeURIComponent(deptId)}` : '';
+    return request(`/orgs/${orgId}/board${query}`);
+  },
+
   // POST /api/tickets
   createTicket: async (payload) => {
     if (USE_MOCK) {

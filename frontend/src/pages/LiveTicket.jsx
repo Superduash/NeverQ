@@ -6,7 +6,7 @@ import {
   ArrowLeft, Share2, MapPin, Navigation, Bell, Volume2,
   Clock, CheckCircle2, AlertTriangle, X, RefreshCw,
   Footprints, Bike, Car, Compass, Users, Sparkles,
-  Megaphone, ShieldAlert, DoorOpen, RotateCcw, AlertCircle
+  Megaphone, ShieldAlert, DoorOpen, RotateCcw, AlertCircle, WifiOff
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useLiveData, useSocketRoom } from '../lib/socket.js';
@@ -58,11 +58,39 @@ export default function LiveTicket() {
     return res;
   }, [token]);
 
-  const { data: ticket, loading, error, refresh } = useLiveData(fetcher, {
+  const { data: liveTicket, loading, error, refresh } = useLiveData(fetcher, {
     room: token ? `ticket:${token}` : null,
     event: 'ticket:update',
     interval: 10000,
   });
+
+  // Phase 10.2: Cache last known ticket state for offline resilience
+  useEffect(() => {
+    if (liveTicket && liveTicket.id) {
+      try {
+        localStorage.setItem(`nq-cached-ticket-${token}`, JSON.stringify({
+          ticket: liveTicket,
+          cachedAt: Date.now(),
+        }));
+      } catch (e) {}
+    }
+  }, [liveTicket, token]);
+
+  const cachedTicketEntry = useMemo(() => {
+    if (liveTicket) return null;
+    try {
+      const raw = localStorage.getItem(`nq-cached-ticket-${token}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }, [liveTicket, token, error]);
+
+  const ticket = liveTicket || cachedTicketEntry?.ticket;
+  const isFromCache = !liveTicket && !!cachedTicketEntry?.ticket;
+  const cachedAtFormatted = cachedTicketEntry?.cachedAt
+    ? new Date(cachedTicketEntry.cachedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
 
   // Stale detection: > 30s since last payload or offline
   const isStale = !isOnline || (Date.now() - lastFetchTime > 30000);
@@ -244,8 +272,8 @@ export default function LiveTicket() {
   }
 
   // ───────────── Phase 5.5: Ended States & Vanished Ticket ─────────────
-  if (error || !ticket) {
-    // Ticket vanished after demo reset or expired session
+  if (!ticket) {
+    // Ticket vanished after demo reset or expired session and no cache available
     return (
       <div className="flex-1 overflow-y-auto no-scrollbar p-4 sm:p-6 max-w-xl mx-auto w-full flex flex-col gap-4 items-center justify-center my-auto">
         <div className="w-full p-6 sm:p-8 rounded-3xl bg-[var(--surface)] border border-[var(--border)] shadow-xs text-center flex flex-col items-center gap-3">
@@ -283,6 +311,50 @@ export default function LiveTicket() {
   // Active or Ended Ticket Main View
   return (
     <div className="flex-1 overflow-y-auto no-scrollbar p-4 sm:p-6 max-w-xl mx-auto w-full flex flex-col gap-4 pb-24">
+      {/* ───────────── Accessibility Live Regions (Phase 10.5) ───────────── */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {ticket
+          ? `Token ${ticket.label}. Status: ${ticket.status}. ${
+              ticket.position === 1
+                ? "You're next in line."
+                : ticket.position
+                ? `Queue position ${ticket.position}.`
+                : ''
+            } Estimated wait: ${etaMid} minutes.`
+          : ''}
+      </div>
+
+      <div role="alert" aria-live="assertive" className="sr-only">
+        {isCalled
+          ? `Now calling Token ${ticket?.label}! Please proceed to ${
+              ticket?.calledCounterName || ticket?.counter?.name || 'the counter'
+            } immediately.`
+          : ''}
+      </div>
+
+      {/* Phase 10.2: Cached State Offline Banner */}
+      {isFromCache && (
+        <div
+          role="status"
+          className="p-3.5 rounded-2xl bg-[var(--wait-mid-bg)] text-[var(--wait-mid-text)] border border-[var(--wait-mid)]/40 flex items-center justify-between text-xs font-semibold shadow-xs"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <WifiOff size={15} className="shrink-0" />
+            <span className="truncate">
+              Offline — Showing cached ticket. Last updated {cachedAtFormatted || 'recently'}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={refresh}
+            className="px-2.5 py-1 rounded-lg bg-[var(--surface)] text-[var(--wait-mid-text)] border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors inline-flex items-center gap-1 font-bold shrink-0 ml-2"
+          >
+            <RefreshCw size={12} />
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Top Bar Navigation */}
       <div className="flex items-center justify-between gap-2">
         <Button

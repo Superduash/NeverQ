@@ -4,7 +4,7 @@ import {
   Users, Stethoscope, Play, CheckCircle2, FastForward, UserCheck,
   UserX, Phone, AlertTriangle, Clock, Plus, Zap, AlertCircle,
   HelpCircle, Printer, X, Check, Pause, ArrowUpDown, ChevronDown,
-  RefreshCw, Sparkles, Filter, ShieldAlert
+  RefreshCw, Sparkles, Filter, ShieldAlert, Monitor
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useLiveData, useSocketRoom } from '../lib/socket.js';
@@ -298,6 +298,16 @@ export default function StaffDashboard() {
               <RefreshCw size={12} className="animate-spin" /> Stale
             </span>
           )}
+
+          <Button
+            size="sm"
+            variant="ghost"
+            iconLeft={<Monitor size={14} />}
+            onClick={() => window.open(`/board/${orgId}`, '_blank')}
+            title="Open Waiting Room Board in new tab"
+          >
+            <span className="hidden md:inline">Public Board</span>
+          </Button>
 
           <Button
             size="sm"

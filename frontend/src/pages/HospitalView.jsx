@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, MapPin, Navigation, Star, CornerUpRight, Share2,
-  Users, Footprints, Bike, Car, ShieldAlert, Clock
+  Users, Footprints, Bike, Car, ShieldAlert, Clock, Monitor
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useLiveData } from '../lib/socket.js';
@@ -156,15 +156,25 @@ export default function HospitalView() {
           ]}
         />
 
-        <a
-          href={directionsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="touch-target px-3.5 py-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-2)] text-xs font-semibold text-[var(--ink)] inline-flex items-center gap-1.5 transition-colors shadow-xs"
-        >
-          <CornerUpRight size={14} />
-          <span>Directions</span>
-        </a>
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/board/${hospital.id}`}
+            className="touch-target px-3.5 py-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-2)] text-xs font-semibold text-[var(--ink)] inline-flex items-center gap-1.5 transition-colors shadow-xs"
+          >
+            <Monitor size={14} />
+            <span>Wait Board</span>
+          </Link>
+
+          <a
+            href={directionsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="touch-target px-3.5 py-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-2)] text-xs font-semibold text-[var(--ink)] inline-flex items-center gap-1.5 transition-colors shadow-xs"
+          >
+            <CornerUpRight size={14} />
+            <span>Directions</span>
+          </a>
+        </div>
       </div>
 
       {/* Departments Live Queues Section */}

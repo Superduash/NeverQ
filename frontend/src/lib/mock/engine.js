@@ -753,6 +753,94 @@ class MockEngine {
     };
   }
 
+  // GET /api/orgs/:id/board (Phase 10.1 Public Wait Board)
+  getBoard(orgId, deptId = null) {
+    const org = this.db.orgs.find((o) => o.id === orgId);
+    if (!org) throw { status: 404, code: 'NOT_FOUND', message: 'Hospital not found' };
+
+    const departments = (deptId 
+      ? org.departments.filter((d) => d.id === deptId) 
+      : org.departments
+    ).map((dept) => {
+      // Find counters and any active tokens being served/called
+      const counters = (dept.counters || []).map((c) => {
+        const activeTicket = c.currentTicketId
+          ? this.db.tickets.find((t) => t.id === c.currentTicketId)
+          : null;
+
+        return {
+          id: c.id,
+          name: c.name,
+          state: c.state,
+          nowServing: activeTicket
+            ? {
+                id: activeTicket.id,
+                label: activeTicket.label,
+                status: activeTicket.status, // 'called' | 'serving'
+                calledAt: activeTicket.calledAt,
+              }
+            : null,
+        };
+      });
+
+      // Find next 5 waiting tickets (strictly privacy safe: NO names or phones)
+      const waiting = this.db.tickets
+        .filter(
+          (t) =>
+            t.orgId === orgId &&
+            t.deptId === dept.id &&
+            (t.status === 'waiting' ||
+              (t.status === 'called' && !dept.counters?.some((c) => c.currentTicketId === t.id)))
+        )
+        .sort((a, b) => {
+          if (a.urgent && !b.urgent) return -1;
+          if (!a.urgent && b.urgent) return 1;
+          if (a.arrived && !b.arrived) return -1;
+          if (!a.arrived && b.arrived) return 1;
+          return a.sortKey - b.sortKey;
+        })
+        .slice(0, 5)
+        .map((t) => ({
+          id: t.id,
+          label: t.label,
+          arrived: !!t.arrived,
+          urgent: !!t.urgent,
+          priority: t.priority,
+        }));
+
+      // Flatten serving counters into active serving list
+      const serving = counters
+        .filter((c) => c.nowServing)
+        .map((c) => ({
+          counterId: c.id,
+          counterName: c.name,
+          label: c.nowServing.label,
+          status: c.nowServing.status,
+          calledAt: c.nowServing.calledAt,
+        }));
+
+      return {
+        id: dept.id,
+        name: dept.name,
+        counters,
+        serving,
+        waiting,
+      };
+    });
+
+    return {
+      org: {
+        id: org.id,
+        name: org.name,
+        area: org.area,
+        address: org.address,
+        departments: (org.departments || []).map((d) => ({ id: d.id, name: d.name })),
+      },
+      departments,
+      updatedAt: this.now(),
+    };
+  }
+
   // POST /api/staff/counters/:id/call-next (Atomic)
   callNext(orgId, counterId) {
     const org = this.db.orgs.find((o) => o.id === orgId);

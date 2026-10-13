@@ -23,3 +23,4 @@ export * from './Banner.jsx';
 export * from './CountdownText.jsx';
 export * from './RelativeTime.jsx';
 export * from './Table.jsx';
+export * from './InstallPrompt.jsx';

@@ -578,6 +578,16 @@ export default function AdminDashboard() {
                   <ExternalLink size={13} />
                 </a>
 
+                <a
+                  href={`/board/${orgs[0]?.id || 'harbour'}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold text-[var(--ink)] hover:text-[var(--brand)] flex items-center gap-1.5 transition-colors"
+                >
+                  <span>Open Wait Board</span>
+                  <ExternalLink size={13} />
+                </a>
+
                 <Button
                   size="sm"
                   variant="ghost"
