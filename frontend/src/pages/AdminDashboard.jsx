@@ -4,7 +4,7 @@ import {
   Building2, Users, Sliders, RotateCcw, FastForward, Play,
   Plus, Check, X, ShieldAlert, Clock, MapPin, Zap, Activity,
   QrCode, Copy, CheckCircle2, ChevronRight, Edit3, Power,
-  ExternalLink, BarChart3, ListFilter, AlertCircle
+  ExternalLink, BarChart3, ListFilter, AlertCircle, Trash2
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useLiveData } from '../lib/socket.js';
@@ -29,6 +29,8 @@ export default function AdminDashboard() {
   const [editingOrg, setEditingOrg] = useState(null);
   const [showOrgModal, setShowOrgModal] = useState(false);
   const [confirmToggleOrg, setConfirmToggleOrg] = useState(null);
+  const [confirmDeleteOrg, setConfirmDeleteOrg] = useState(null);
+  const [deletingOrg, setDeletingOrg] = useState(false);
 
   // Demo Director states
   const [resetting, setResetting] = useState(false);
@@ -347,17 +349,35 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border)]">
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        iconLeft={<Edit3 size={13} />}
-                        onClick={() => {
-                          setEditingOrg(hospital);
-                          setShowOrgModal(true);
-                        }}
-                      >
-                        Edit Details
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          iconLeft={<Edit3 size={13} />}
+                          onClick={() => {
+                            setEditingOrg(hospital);
+                            setShowOrgModal(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
+
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          className="text-[var(--danger)] hover:bg-[var(--danger)]/10"
+                          iconLeft={<Trash2 size={13} />}
+                          onClick={() => {
+                            if (hospital.demo && (hospital.seeded || ['harbour', 'lakeside', 'metro-mercy', 'apollo-demo'].includes(hospital.id))) {
+                              notify.info('Seeded demo hospitals cannot be deleted. You can close the facility instead.');
+                              return;
+                            }
+                            setConfirmDeleteOrg(hospital);
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
 
                       <Button
                         size="xs"
@@ -637,7 +657,7 @@ export default function AdminDashboard() {
                 </a>
 
                 <a
-                  href={`/board/${orgs[0]?.id || 'harbour'}`}
+                  href={`/board/${hospitals[0]?.id || 'harbour'}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-3.5 py-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold text-[var(--ink)] hover:text-[var(--brand)] flex items-center gap-1.5 transition-colors"
@@ -762,6 +782,7 @@ export default function AdminDashboard() {
       {confirmToggleOrg && (
         <ConfirmDialog
           isOpen={true}
+          danger={confirmToggleOrg.open !== false}
           title={`${confirmToggleOrg.open !== false ? 'Close' : 'Re-open'} ${confirmToggleOrg.name}?`}
           description={
             confirmToggleOrg.open !== false
@@ -770,12 +791,42 @@ export default function AdminDashboard() {
           }
           confirmText={confirmToggleOrg.open !== false ? 'Close Facility' : 'Re-open'}
           onConfirm={async () => {
-            await api.toggleOrgStatus(confirmToggleOrg.id);
-            notify.success(`Status updated for ${confirmToggleOrg.name}`);
-            setConfirmToggleOrg(null);
-            loadAllData();
+            try {
+              await api.toggleOrgStatus(confirmToggleOrg.id);
+              notify.success(`Status updated: ${confirmToggleOrg.name} is now ${confirmToggleOrg.open !== false ? 'closed' : 'open'}`);
+              setConfirmToggleOrg(null);
+              loadAllData();
+            } catch (err) {
+              notify.error(err);
+            }
           }}
           onClose={() => setConfirmToggleOrg(null)}
+        />
+      )}
+
+      {/* Confirm Delete Hospital Dialog */}
+      {confirmDeleteOrg && (
+        <ConfirmDialog
+          isOpen={true}
+          danger={true}
+          loading={deletingOrg}
+          title={`Delete ${confirmDeleteOrg.name}?`}
+          description="This will permanently delete this hospital, all its departments, consultation desks, and queue tickets. This action cannot be undone."
+          confirmText="Delete Hospital"
+          onConfirm={async () => {
+            setDeletingOrg(true);
+            try {
+              await api.deleteOrg(confirmDeleteOrg.id);
+              notify.success(`Hospital ${confirmDeleteOrg.name} deleted`);
+              setConfirmDeleteOrg(null);
+              loadAllData();
+            } catch (err) {
+              notify.error(err);
+            } finally {
+              setDeletingOrg(false);
+            }
+          }}
+          onClose={() => setConfirmDeleteOrg(null)}
         />
       )}
 

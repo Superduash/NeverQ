@@ -1217,10 +1217,26 @@ class MockEngine {
   toggleOrgStatus(id) {
     const org = this.db.orgs.find((o) => o.id === id);
     if (!org) throw { status: 404, code: 'NOT_FOUND', message: 'Hospital not found' };
-    org.open = org.open === false ? true : false;
+    const currentlyOpen = org.open !== false;
+    org.open = !currentlyOpen;
     this.save();
-    mockEmitter.emit('queue:update', { reason: 'toggle-status' });
+    mockEmitter.emit('queue:update', { reason: 'toggle-status', orgId: id, open: org.open });
     return org;
+  }
+
+  // DELETE /api/admin/orgs/:id
+  deleteOrg(id) {
+    const idx = this.db.orgs.findIndex((o) => o.id === id);
+    if (idx === -1) throw { status: 404, code: 'NOT_FOUND', message: 'Hospital not found' };
+    const org = this.db.orgs[idx];
+    if (org.seeded && org.demo) {
+      throw { status: 400, code: 'CANNOT_DELETE_SEEDED', message: 'Seeded demo hospitals cannot be deleted. You can close the facility instead.' };
+    }
+    this.db.orgs.splice(idx, 1);
+    this.db.tickets = (this.db.tickets || []).filter((t) => t.orgId !== id);
+    this.save();
+    mockEmitter.emit('queue:update', { reason: 'delete-org', orgId: id });
+    return { success: true, id };
   }
 
   // ───────────── Phase 0.11 Contracts ─────────────

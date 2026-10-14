@@ -495,6 +495,17 @@ export const api = {
     });
   },
 
+  deleteOrg: async (id) => {
+    if (USE_MOCK) {
+      await new Promise((r) => setTimeout(r, 100));
+      return mockEngine.deleteOrg(id);
+    }
+    return request(`/admin/orgs/${id}`, {
+      method: 'DELETE',
+      role: 'admin',
+    });
+  },
+
   // GET /api/staff/insights?deptId=
   getStaffInsights: async (deptId) => {
     if (USE_MOCK) {

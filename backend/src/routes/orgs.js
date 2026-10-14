@@ -1,18 +1,112 @@
 // backend/src/routes/orgs.js
-// Public org/hospital read endpoints (Phase 7)
-// GET /api/orgs           – list with wait ETAs
-// GET /api/orgs/:id       – single org detail
+// Public org/hospital read endpoints (§5.1, §7, NeverQ2 §3.1)
+// GET /api/orgs           – list with wait ETAs and travel estimates
+// GET /api/orgs/:id       – single org detail with full departments
 // GET /api/orgs/:id/board – public wait board
 
 import { Router } from 'express';
+import { Org, Department, Counter, Ticket, Settings } from '../db/models/index.js';
+import { estimateTravel } from '../services/travel/estimate.js';
+import { getQueueSnapshot } from '../services/eta/recompute.js';
+import { compareWaitingTickets } from '../services/eta/engine.js';
+import { now } from '../lib/clock.js';
 
 const router = Router();
+
+/**
+ * Format a single org document with its departments and live queue/ETA snapshots.
+ */
+async function formatOrgDetail(org, origin, rushFactor = 1.0, deptFilter = null) {
+  // Query all departments for this org
+  let deptDocs = await Department.find({ orgId: org._id }).sort({ order: 1 }).lean();
+  if (deptFilter) {
+    deptDocs = deptDocs.filter((d) => d.key === deptFilter);
+  }
+
+  // Populate departments with live counters and queue snapshots
+  const departments = await Promise.all(
+    deptDocs.map(async (d) => {
+      const counters = await Counter.find({ orgId: org._id, deptKey: d.key }).lean();
+      const waitingCount = await Ticket.countDocuments({
+        orgId: org._id,
+        deptKey: d.key,
+        status: 'waiting',
+      });
+
+      let eta = null;
+      let confidence = 'Estimating';
+      try {
+        const snapshot = await getQueueSnapshot(org._id, d.key);
+        eta = snapshot.newJoiner;
+        confidence = snapshot.confidence;
+      } catch (err) {
+        console.warn(`[Orgs] Could not get ETA snapshot for ${org._id}:${d.key}:`, err.message);
+      }
+
+      return {
+        id: d.key,
+        name: d.name,
+        code: d.code,
+        defaultMin: d.defaultMin,
+        waitingCount,
+        countersOpen: counters.filter((c) => c.state === 'open').length,
+        countersTotal: counters.length,
+        eta,
+        confidence,
+      };
+    })
+  );
+
+  // Calculate travel time and distance
+  const travel = estimateTravel(origin, { lat: org.lat, lng: org.lng }, 'car', rushFactor);
+
+  return {
+    id: org._id,
+    name: org.name,
+    category: org.category || 'hospital',
+    demo: Boolean(org.demo),
+    open: org.open !== false,
+    lat: org.lat,
+    lng: org.lng,
+    area: org.area,
+    address: org.address,
+    hours: org.hours || '08:00–20:00',
+    rules: org.rules || {},
+    departments,
+    distanceKm: travel.km,
+    travelMin: travel.minutes,
+  };
+}
 
 // GET /api/orgs
 router.get('/', async (req, res, next) => {
   try {
-    // TODO Phase 7: query MongoDB, calculate ETAs, sort by distance
-    res.json([]);
+    const { lat, lng, dept, search } = req.query;
+
+    const filter = {};
+    if (search && typeof search === 'string' && search.trim()) {
+      filter.$or = [
+        { name: { $regex: search.trim(), $options: 'i' } },
+        { area: { $regex: search.trim(), $options: 'i' } },
+      ];
+    }
+
+    const [orgs, settings] = await Promise.all([
+      Org.find(filter).lean(),
+      Settings.findById('global').lean(),
+    ]);
+
+    const rushFactor = settings?.rushFactor || 1.0;
+    const origin = lat && lng ? { lat: Number(lat), lng: Number(lng) } : { lat: 13.04, lng: 80.24 };
+
+    const formattedList = await Promise.all(
+      orgs.map((org) => formatOrgDetail(org, origin, rushFactor, dept))
+    );
+
+    // Sort by distanceKm ascending
+    formattedList.sort((a, b) => (a.distanceKm || 0) - (b.distanceKm || 0));
+
+    res.json(formattedList);
   } catch (err) {
     next(err);
   }
@@ -21,18 +115,128 @@ router.get('/', async (req, res, next) => {
 // GET /api/orgs/:id
 router.get('/:id', async (req, res, next) => {
   try {
-    // TODO Phase 7
-    res.status(501).json({ status: 501, code: 'NOT_IMPLEMENTED', message: 'Phase 7 pending' });
+    const org = await Org.findById(req.params.id).lean();
+    if (!org) {
+      return res.status(404).json({
+        status: 404,
+        code: 'NOT_FOUND',
+        message: 'Hospital not found',
+      });
+    }
+
+    const settings = await Settings.findById('global').lean();
+    const rushFactor = settings?.rushFactor || 1.0;
+    const origin = req.query.lat && req.query.lng
+      ? { lat: Number(req.query.lat), lng: Number(req.query.lng) }
+      : { lat: 13.04, lng: 80.24 };
+
+    const formatted = await formatOrgDetail(org, origin, rushFactor, null);
+    res.json(formatted);
   } catch (err) {
     next(err);
   }
 });
 
-// GET /api/orgs/:id/board
+// GET /api/orgs/:id/board (Phase 10.1 Public Wait Board)
 router.get('/:id/board', async (req, res, next) => {
   try {
-    // TODO Phase 7
-    res.status(501).json({ status: 501, code: 'NOT_IMPLEMENTED', message: 'Phase 7 pending' });
+    const org = await Org.findById(req.params.id).lean();
+    if (!org) {
+      return res.status(404).json({
+        status: 404,
+        code: 'NOT_FOUND',
+        message: 'Hospital not found',
+      });
+    }
+
+    const { deptId } = req.query;
+    const allDepts = await Department.find({ orgId: org._id }).sort({ order: 1 }).lean();
+    const targetDepts = deptId ? allDepts.filter((d) => d.key === deptId) : allDepts;
+
+    const departments = await Promise.all(
+      targetDepts.map(async (dept) => {
+        const counters = await Counter.find({ orgId: org._id, deptKey: dept.key }).lean();
+
+        // For each counter, find active ticket if serving or called
+        const populatedCounters = await Promise.all(
+          counters.map(async (c) => {
+            let nowServing = null;
+            if (c.currentTicketId) {
+              const activeTicket = await Ticket.findById(c.currentTicketId).lean();
+              if (activeTicket) {
+                nowServing = {
+                  id: activeTicket._id,
+                  label: activeTicket.label,
+                  status: activeTicket.status, // 'called' | 'serving'
+                  calledAt: activeTicket.calledAt,
+                };
+              }
+            }
+
+            return {
+              id: c._id,
+              name: c.name,
+              state: c.state,
+              nowServing,
+            };
+          })
+        );
+
+        // Find next 5 waiting tickets (strictly privacy safe: NO names or phones)
+        const activeTickets = await Ticket.find({
+          orgId: org._id,
+          deptKey: dept.key,
+          status: { $in: ['waiting', 'called'] },
+        }).lean();
+
+        const counterTicketIds = new Set(
+          counters.map((c) => c.currentTicketId?.toString()).filter(Boolean)
+        );
+
+        const waiting = activeTickets
+          .filter((t) => t.status === 'waiting' || !counterTicketIds.has(t._id.toString()))
+          .sort(compareWaitingTickets)
+          .slice(0, 5)
+          .map((t) => ({
+            id: t._id,
+            label: t.label,
+            arrived: Boolean(t.arrived),
+            urgent: Boolean(t.urgent),
+            priority: t.priority,
+          }));
+
+        // Flatten serving counters into active serving list
+        const serving = populatedCounters
+          .filter((c) => c.nowServing)
+          .map((c) => ({
+            counterId: c.id,
+            counterName: c.name,
+            label: c.nowServing.label,
+            status: c.nowServing.status,
+            calledAt: c.nowServing.calledAt,
+          }));
+
+        return {
+          id: dept.key,
+          name: dept.name,
+          counters: populatedCounters,
+          serving,
+          waiting,
+        };
+      })
+    );
+
+    res.json({
+      org: {
+        id: org._id,
+        name: org.name,
+        area: org.area,
+        address: org.address,
+        departments: allDepts.map((d) => ({ id: d.key, name: d.name })),
+      },
+      departments,
+      updatedAt: now(),
+    });
   } catch (err) {
     next(err);
   }
