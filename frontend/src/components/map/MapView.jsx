@@ -112,7 +112,7 @@ export function MapView({
       mapInstance.on('click', (e) => {
         const coords = { lat: e.lngLat.lat, lng: e.lngLat.lng };
 
-        if (isPinModeRef.current && onPickRef.current) {
+        if (onPickRef.current && (isPinModeRef.current || mode === 'ticket' || mode === 'pick')) {
           setPickedCoords(coords);
           onPickRef.current(coords);
           return;
@@ -275,12 +275,15 @@ export function MapView({
       return;
     }
 
+    const canDrag = Boolean(onPickRef.current && (mode === 'ticket' || mode === 'pick' || isPinModeRef.current));
     if (!userMarkerRef.current) {
-      // Created with draggable: false so accidental map panning never moves the pin
       userMarkerRef.current = createUserMarker({
         location: user,
         map,
-        draggable: false,
+        draggable: canDrag,
+        onDragEnd: (coords) => {
+          if (onPickRef.current) onPickRef.current(coords);
+        },
       });
     } else {
       updateUserMarker({

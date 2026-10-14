@@ -246,7 +246,9 @@ export default function HospitalView() {
                   </div>
 
                   <Badge variant={badgeVariant}>
-                    ~{dept.eta?.low}–{dept.eta?.high}m wait
+                    {dept.eta?.low === 0 && dept.eta?.high === 0
+                      ? 'No wait'
+                      : `~${dept.eta?.low ?? 0}–${dept.eta?.high ?? 5}m wait`}
                   </Badge>
                 </div>
 

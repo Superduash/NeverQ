@@ -249,6 +249,21 @@ export default function LiveTicket() {
     }
   };
 
+  const handleSimulateArrival = () => {
+    if (!ticket?.org?.lat || !ticket?.org?.lng) return;
+    const nearLoc = {
+      id: 'demo_arrived',
+      type: 'gps',
+      lat: ticket.org.lat + 0.0002,
+      lng: ticket.org.lng + 0.0002,
+      label: 'At Clinic (Simulated)',
+      isGPS: true,
+    };
+    setUserLocation(nearLoc);
+    setArriveError(null);
+    notify.success('Marker placed at hospital (<50m)! Tap "I\'m Here" to check in.');
+  };
+
   const handleCancelTicket = async () => {
     setCancelling(true);
     try {
@@ -567,7 +582,7 @@ export default function LiveTicket() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2 pt-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <Segmented
               size="sm"
               value={travelMode}
@@ -579,33 +594,64 @@ export default function LiveTicket() {
               ]}
             />
 
-            {/* Check-in / I'm Here Button */}
-            <Button
-              size="sm"
-              variant="primary"
-              loading={arriving}
-              onClick={handleArrive}
-            >
-              I'm Here
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-xs font-semibold text-[var(--brand)] hover:bg-[var(--brand)]/10"
+                onClick={handleSimulateArrival}
+                title="Move your marker to within 50m of the hospital for demo check-in"
+              >
+                📍 Place Pin at Clinic
+              </Button>
+
+              {/* Check-in / I'm Here Button */}
+              <Button
+                size="sm"
+                variant="primary"
+                loading={arriving}
+                onClick={handleArrive}
+              >
+                I'm Here
+              </Button>
+            </div>
           </div>
 
-          {/* Mini Route Map Preview (Phase A.1 Ticket Mode) */}
+          {/* Mini Route Map Preview (Interactive & Pin-Enabled) */}
           {ticket?.org && typeof ticket.org.lat === 'number' && typeof ticket.org.lng === 'number' && (
-            <div className="rounded-2xl overflow-hidden border border-[var(--border)] h-36 sm:h-40 relative mt-1">
-              <MapView
-                markers={[ticket.org]}
-                selected={ticket.org.id}
-                user={userLocation || DEMO_HOME}
-                mode="ticket"
-                interactive={true}
-                route={[
-                  [(userLocation || DEMO_HOME).lng, (userLocation || DEMO_HOME).lat],
-                  [ticket.org.lng, ticket.org.lat],
-                ]}
-                center={[ticket.org.lng, ticket.org.lat]}
-                zoom={12.5}
-              />
+            <div className="flex flex-col gap-1 mt-1">
+              <div className="rounded-2xl overflow-hidden border border-[var(--border)] h-36 sm:h-44 relative">
+                <MapView
+                  markers={[ticket.org]}
+                  selected={ticket.org.id}
+                  user={userLocation || DEMO_HOME}
+                  mode="ticket"
+                  interactive={true}
+                  onPick={(coords) => {
+                    setUserLocation({
+                      id: 'custom_pin',
+                      type: 'gps',
+                      lat: coords.lat,
+                      lng: coords.lng,
+                      label: 'Custom Pin Location',
+                      isGPS: true,
+                    });
+                    setArriveError(null);
+                  }}
+                  route={[
+                    [(userLocation || DEMO_HOME).lng, (userLocation || DEMO_HOME).lat],
+                    [ticket.org.lng, ticket.org.lat],
+                  ]}
+                  center={[ticket.org.lng, ticket.org.lat]}
+                  zoom={12.5}
+                />
+              </div>
+              <p className="text-[10px] text-[var(--ink-faint)] flex items-center justify-between px-1">
+                <span>💡 Click map or tap "Place Pin at Clinic" to test check-in</span>
+                <span className="font-semibold text-[var(--brand)]">
+                  {travel.km <= 0.35 ? '✓ Ready to check in' : `${travel.km} km away`}
+                </span>
+              </p>
             </div>
           )}
 

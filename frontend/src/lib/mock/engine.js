@@ -659,13 +659,20 @@ class MockEngine {
     const targetDeptId = deptId || org.departments[0]?.id;
     const dept = org.departments.find((d) => d.id === targetDeptId);
 
-    const tickets = this.db.tickets.filter((t) => t.orgId === orgId && t.deptId === targetDeptId);
+    const tickets = this.db.tickets.filter(
+      (t) => t.orgId === orgId && t.deptId === targetDeptId && ['waiting', 'called', 'serving'].includes(t.status)
+    );
+    const completed = this.db.tickets
+      .filter((t) => t.orgId === orgId && t.deptId === targetDeptId && t.status === 'done')
+      .sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0))
+      .slice(0, 20);
 
     return {
       org: { id: org.id, name: org.name },
       department: dept,
       counters: dept?.counters || [],
       tickets,
+      completed,
     };
   }
 

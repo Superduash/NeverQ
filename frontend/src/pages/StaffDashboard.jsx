@@ -243,17 +243,19 @@ export default function StaffDashboard() {
 
   // ───────────── Filtered Queue List ─────────────
   const rawTickets = queueData?.tickets || [];
+  const completedTickets = queueData?.completed || [];
   const waitingTickets = rawTickets.filter((t) => t.status === 'waiting');
   const calledOrServingTickets = rawTickets.filter((t) => t.status === 'called' || t.status === 'serving');
 
-  const filteredWaiting = useMemo(() => {
+  const displayTickets = useMemo(() => {
+    if (filterMode === 'completed') return completedTickets;
     return waitingTickets.filter((t) => {
       if (filterMode === 'arrived') return t.arrived;
       if (filterMode === 'not-arrived') return !t.arrived;
       if (filterMode === 'priority') return t.priority && t.priority !== 'none';
       return true;
     });
-  }, [waitingTickets, filterMode]);
+  }, [waitingTickets, completedTickets, filterMode]);
 
   const arrivedCount = waitingTickets.filter((t) => t.arrived).length;
 
@@ -543,6 +545,7 @@ export default function StaffDashboard() {
                   { id: 'arrived', label: `Arrived (${arrivedCount})` },
                   { id: 'not-arrived', label: `Not Arrived (${waitingTickets.length - arrivedCount})` },
                   { id: 'priority', label: 'Priority Claims' },
+                  { id: 'completed', label: `Done (${completedTickets.length})` },
                 ].map((f) => (
                   <button
                     key={f.id}
@@ -565,7 +568,7 @@ export default function StaffDashboard() {
 
             {/* Ticket Rows */}
             <div className="flex-1 overflow-y-auto no-scrollbar p-3 flex flex-col gap-2">
-              {filteredWaiting.length === 0 ? (
+              {displayTickets.length === 0 ? (
                 <div className="py-16 text-center flex flex-col items-center gap-2">
                   <Users size={32} className="text-[var(--ink-faint)]" />
                   <p className="font-heading font-bold text-sm text-[var(--ink)]">
@@ -576,7 +579,8 @@ export default function StaffDashboard() {
                   </p>
                 </div>
               ) : (
-                filteredWaiting.map((ticket, idx) => {
+                displayTickets.map((ticket, idx) => {
+                  const isDone = ticket.status === 'done';
                   const hasPriority = ticket.priority && ticket.priority !== 'none';
                   const isLate = ticket.lateCount > 0;
 
@@ -586,6 +590,8 @@ export default function StaffDashboard() {
                       className={`p-3.5 rounded-2xl border bg-[var(--surface)] flex items-center justify-between gap-3 hover:border-[var(--brand)]/60 transition-colors ${
                         ticket.urgent
                           ? 'border-[var(--accent)] bg-[var(--accent)]/5'
+                          : isDone
+                          ? 'border-emerald-500/20 bg-emerald-500/5'
                           : 'border-[var(--border)]'
                       }`}
                     >
@@ -601,6 +607,11 @@ export default function StaffDashboard() {
                               {ticket.name || 'Anonymous Patient'}
                             </span>
 
+                            {isDone && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 font-bold flex items-center gap-1">
+                                <CheckCircle2 size={11} /> Done
+                              </span>
+                            )}
                             {ticket.urgent && (
                               <Badge variant="sim">URGENT</Badge>
                             )}
@@ -623,7 +634,11 @@ export default function StaffDashboard() {
                           </div>
 
                           <div className="flex items-center gap-2 text-[11px] text-[var(--ink-faint)] mt-0.5">
-                            {ticket.arrived ? (
+                            {isDone ? (
+                              <span className="text-emerald-600 font-medium">
+                                Completed at {new Date(ticket.doneAt || ticket.updatedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            ) : ticket.arrived ? (
                               <span className="text-[var(--wait-good)] font-bold flex items-center gap-1">
                                 <CheckCircle2 size={12} /> Arrived at clinic
                               </span>
@@ -633,7 +648,7 @@ export default function StaffDashboard() {
                               </span>
                             )}
 
-                            {ticket.lastEta?.startMs && (
+                            {!isDone && ticket.lastEta?.startMs && (
                               <span className="text-[var(--ink-faint)] font-medium">
                                 · Start ~{new Date(ticket.lastEta.startMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
@@ -656,29 +671,33 @@ export default function StaffDashboard() {
 
                       {/* Row Actions */}
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {/* Confirm Arrival (if remote) */}
-                        {!ticket.arrived && (
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            onClick={() => handleConfirmArrival(ticket.id)}
-                            title="Confirm patient arrived at counter"
-                          >
-                            Mark Arrived
-                          </Button>
-                        )}
+                        {!isDone && (
+                          <>
+                            {/* Confirm Arrival (if remote) */}
+                            {!ticket.arrived && (
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                onClick={() => handleConfirmArrival(ticket.id)}
+                                title="Confirm patient arrived at counter"
+                              >
+                                Mark Arrived
+                              </Button>
+                            )}
 
-                        {/* Call Ticket (calls to focused counter) */}
-                        <Button
-                          size="xs"
-                          variant="primary"
-                          onClick={() => {
-                            if (focusedCounterId) handleCallNext(focusedCounterId);
-                          }}
-                          disabled={!ticket.arrived || actionLoading}
-                        >
-                          Call
-                        </Button>
+                            {/* Call Ticket (calls to focused counter) */}
+                            <Button
+                              size="xs"
+                              variant="primary"
+                              onClick={() => {
+                                if (focusedCounterId) handleCallNext(focusedCounterId);
+                              }}
+                              disabled={!ticket.arrived || actionLoading}
+                            >
+                              Call
+                            </Button>
+                          </>
+                        )}
 
                         {/* Details Drawer Trigger */}
                         <IconButton
@@ -691,13 +710,15 @@ export default function StaffDashboard() {
                           }}
                         />
 
-                        {/* Remove / Skip Menu */}
-                        <IconButton
-                          icon={<X size={13} className="text-[var(--danger)]" />}
-                          label="Remove ticket"
-                          variant="ghost"
-                          onClick={() => setConfirmRemoveTicket(ticket)}
-                        />
+                        {!isDone && (
+                          /* Remove / Skip Menu */
+                          <IconButton
+                            icon={<X size={13} className="text-[var(--danger)]" />}
+                            label="Remove ticket"
+                            variant="ghost"
+                            onClick={() => setConfirmRemoveTicket(ticket)}
+                          />
+                        )}
                       </div>
                     </div>
                   );

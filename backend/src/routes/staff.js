@@ -21,6 +21,7 @@ import {
 import { recomputeAndLog } from '../services/eta/recompute.js';
 import { sweepDepartment } from '../services/queue/sweep.js';
 import { updateStats } from '../services/eta/stats.js';
+import { emitQueue, emitTicket, emitCalled } from '../services/realtime/emitter.js';
 import { AppError } from '../lib/errors.js';
 
 const router = Router();
@@ -100,7 +101,7 @@ router.get('/queue', requireStaff, async (req, res, next) => {
       deptKey = firstDept?.key || 'gen';
     }
 
-    const [counters, tickets] = await Promise.all([
+    const [counters, tickets, completedTickets] = await Promise.all([
       Counter.find({ orgId: req.orgId, deptKey }).lean(),
       Ticket.find({
         orgId: req.orgId,
@@ -108,6 +109,14 @@ router.get('/queue', requireStaff, async (req, res, next) => {
         status: { $in: ['waiting', 'called', 'serving'] },
       })
         .sort({ urgent: -1, urgentAt: 1, sortKey: 1, joinedAt: 1, _id: 1 })
+        .lean(),
+      Ticket.find({
+        orgId: req.orgId,
+        deptKey,
+        status: 'done',
+      })
+        .sort({ doneAt: -1, updatedAt: -1 })
+        .limit(20)
         .lean(),
     ]);
 
@@ -124,6 +133,7 @@ router.get('/queue', requireStaff, async (req, res, next) => {
         delayReason: c.delayReason || null,
       })),
       tickets: tickets.map(formatStaffTicketDTO),
+      completed: completedTickets.map(formatStaffTicketDTO),
     });
   } catch (err) {
     next(err);
@@ -206,9 +216,12 @@ router.post('/counters/:id/call-next', requireStaff, async (req, res, next) => {
     counter.currentTicketId = claimedTicket._id;
     await counter.save();
 
-    // 5. Recompute & Sweep (§6.6 step 6)
     await recomputeAndLog(req.orgId, counter.deptKey, 'call', { counter: counter.name });
     sweepDepartment(req.orgId, counter.deptKey).catch(() => {});
+
+    emitCalled(claimedTicket.token, { ticket: claimedTicket, counter, orgId: req.orgId });
+    emitQueue(req.orgId);
+    emitTicket(claimedTicket.token);
 
     // 6. Return staff DTO (§6.6 step 7)
     res.json({
@@ -268,6 +281,7 @@ router.post(
         minutes,
         reason,
       });
+      emitQueue(req.orgId);
 
       res.json({
         id: counter._id,
@@ -308,6 +322,7 @@ router.post(
       await recomputeAndLog(req.orgId, counter.deptKey, `counter_${state}`, {
         counter: counter.name,
       });
+      emitQueue(req.orgId);
 
       res.json({
         id: counter._id,
@@ -343,6 +358,8 @@ router.post('/tickets/:id/start', requireStaff, async (req, res, next) => {
     }
 
     await recomputeAndLog(req.orgId, ticket.deptKey, 'start', { counter: ticket.calledCounterName });
+    emitQueue(req.orgId);
+    emitTicket(ticket.token);
 
     res.json(formatStaffTicketDTO(ticket));
   } catch (err) {
@@ -396,6 +413,8 @@ router.post('/tickets/:id/done', requireStaff, async (req, res, next) => {
 
     await recomputeAndLog(req.orgId, ticket.deptKey, 'done', { counter: ticket.calledCounterName });
     sweepDepartment(req.orgId, ticket.deptKey).catch(() => {});
+    emitQueue(req.orgId);
+    emitTicket(ticket.token);
 
     res.json(formatStaffTicketDTO(ticket));
   } catch (err) {
@@ -473,6 +492,8 @@ router.post('/tickets/:id/skip', requireStaff, async (req, res, next) => {
 
     await recomputeAndLog(req.orgId, ticket.deptKey, 'skip');
     sweepDepartment(req.orgId, ticket.deptKey).catch(() => {});
+    emitQueue(req.orgId);
+    emitTicket(ticket.token);
 
     res.json(formatStaffTicketDTO(ticket));
   } catch (err) {
@@ -503,6 +524,8 @@ router.post('/tickets/:id/arrive', requireStaff, async (req, res, next) => {
 
     await recomputeAndLog(req.orgId, ticket.deptKey, 'arrive');
     sweepDepartment(req.orgId, ticket.deptKey).catch(() => {});
+    emitQueue(req.orgId);
+    emitTicket(ticket.token);
 
     res.json(formatStaffTicketDTO(ticket));
   } catch (err) {
@@ -600,6 +623,8 @@ router.post(
 
       await recomputeAndLog(req.orgId, ticket.deptKey, 'remove');
       sweepDepartment(req.orgId, ticket.deptKey).catch(() => {});
+      emitQueue(req.orgId);
+      emitTicket(ticket.token);
 
       res.json({ success: true, removedAt: currentTime });
     } catch (err) {
@@ -679,6 +704,8 @@ router.post(
 
       await recomputeAndLog(req.orgId, deptId, 'join', { priority });
       sweepDepartment(req.orgId, deptId).catch(() => {});
+      emitQueue(req.orgId);
+      emitTicket(ticket.token);
 
       res.status(201).json(formatStaffTicketDTO(ticket));
     } catch (err) {
@@ -745,6 +772,8 @@ router.post(
 
       await recomputeAndLog(req.orgId, deptId, 'urgent', { count: 1 });
       sweepDepartment(req.orgId, deptId).catch(() => {});
+      emitQueue(req.orgId);
+      emitTicket(ticket.token);
 
       res.status(201).json(formatStaffTicketDTO(ticket));
     } catch (err) {

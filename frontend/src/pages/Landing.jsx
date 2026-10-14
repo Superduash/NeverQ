@@ -1108,7 +1108,9 @@ export default function Landing() {
                 <div className="p-2 rounded-xl bg-[var(--surface-2)]">
                   <span className="text-[10px] text-[var(--ink-faint)] block">Wait Estimate</span>
                   <span className="font-bold text-[var(--ink)] tnum">
-                    {selectedHospital.selectedDept?.eta?.low}–{selectedHospital.selectedDept?.eta?.high}m
+                    {selectedHospital.selectedDept?.eta?.low === 0 && selectedHospital.selectedDept?.eta?.high === 0
+                      ? 'No wait'
+                      : `${selectedHospital.selectedDept?.eta?.low ?? 0}–${selectedHospital.selectedDept?.eta?.high ?? 5}m`}
                   </span>
                 </div>
                 <div className="p-2 rounded-xl bg-[var(--surface-2)]">
@@ -1390,7 +1392,11 @@ function HospitalCardItem({
         <div className="flex items-center gap-2 min-w-0">
           <span className={`px-2.5 py-1 rounded-xl text-xs font-bold tnum flex items-center gap-1.5 shrink-0 ${badgeStyle}`}>
             <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor}`} />
-            <span>{hospital.selectedDept?.eta?.low}–{hospital.selectedDept?.eta?.high}m wait</span>
+            <span>
+              {hospital.selectedDept?.eta?.low === 0 && hospital.selectedDept?.eta?.high === 0
+                ? 'No wait'
+                : `${hospital.selectedDept?.eta?.low ?? 0}–${hospital.selectedDept?.eta?.high ?? 5}m wait`}
+            </span>
           </span>
           <span className="text-[11px] font-medium text-[var(--ink-faint)] truncate">
             {hospital.selectedDept?.name}
