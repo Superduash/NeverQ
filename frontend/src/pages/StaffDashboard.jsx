@@ -126,18 +126,39 @@ export default function StaffDashboard() {
   }, [focusedCounterId, queueData]);
 
   // ───────────── Counter Actions ─────────────
-  const handleCallNext = async (counterId) => {
+  const handleCallNext = async (counterId, ticketId = null) => {
     if (actionLoading) return;
+
+    // Check if target counter is busy; if busy, look for an available open counter in this department
+    let targetId = counterId;
+    const targetCounter = queueData?.counters?.find((c) => c.id === targetId);
+    const targetBusy = targetCounter?.currentTicketId && rawTickets.some((t) => t.id === targetCounter.currentTicketId && ['called', 'serving'].includes(t.status));
+
+    if (targetBusy) {
+      // Find an alternative open counter that is NOT currently occupied
+      const freeCounter = queueData?.counters?.find(
+        (c) => c.state === 'open' && (!c.currentTicketId || !rawTickets.some((t) => t.id === c.currentTicketId && ['called', 'serving'].includes(t.status)))
+      );
+      if (freeCounter) {
+        targetId = freeCounter.id;
+        setFocusedCounterId(freeCounter.id);
+      } else {
+        notify.warning(`All counters are currently occupied. Please complete (Done) or Skip the active consultation on ${targetCounter.name} first.`);
+        return;
+      }
+    }
+
     setActionLoading(true);
     try {
-      const res = await api.callNext(counterId);
+      const res = await api.callNext(targetId, ticketId);
       notify.success(`Called token #${res.ticket?.label || ''} to ${res.counter?.name || 'Counter'}`);
       refresh();
     } catch (err) {
+      const msg = err.message || (err.status === 409 ? 'Counter is occupied or ticket was already called.' : 'Could not call next ticket');
       if (err.status === 409) {
-        notify.warning('Already called by another counter. Refreshing...');
+        notify.warning(msg);
       } else {
-        notify.error(err.message || 'Could not call next ticket');
+        notify.error(msg);
       }
       refresh();
     } finally {
@@ -712,7 +733,7 @@ export default function StaffDashboard() {
                               size="xs"
                               variant="primary"
                               onClick={() => {
-                                if (focusedCounterId) handleCallNext(focusedCounterId);
+                                handleCallNext(focusedCounterId, ticket.id);
                               }}
                               disabled={!ticket.arrived || actionLoading}
                             >

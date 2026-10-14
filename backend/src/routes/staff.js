@@ -146,6 +146,7 @@ router.get('/queue', requireStaff, async (req, res, next) => {
 router.post('/counters/:id/call-next', requireStaff, async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { ticketId } = req.body || {};
     const counter = await Counter.findById(id);
     checkStaffOrgScope(counter, req.orgId);
 
@@ -156,6 +157,27 @@ router.post('/counters/:id/call-next', requireStaff, async (req, res, next) => {
       return next(new AppError('COUNTER_NOT_OPEN', 400, 'Counter is not currently open or is on delay.'));
     }
 
+    // Auto-heal stale counter state: if counter has currentTicketId, verify if ticket is still called/serving
+    if (counter.currentTicketId) {
+      const activeTicket = await Ticket.findOne({
+        _id: counter.currentTicketId,
+        orgId: req.orgId,
+        status: { $in: ['called', 'serving'] },
+      });
+      if (!activeTicket) {
+        // Counter was left pointing to a completed/cancelled/expired ticket or PENDING_SENTINEL -> release it!
+        await Counter.findByIdAndUpdate(id, { $set: { currentTicketId: null } });
+      } else {
+        return next(
+          new AppError(
+            'COUNTER_BUSY',
+            409,
+            `Counter "${counter.name}" already has an active patient (#${activeTicket.label}). Finish or skip this consultation first.`
+          )
+        );
+      }
+    }
+
     // 2. Claim counter atomically with PENDING_SENTINEL (§6.6 step 3)
     const claimedCounter = await Counter.findOneAndUpdate(
       { _id: id, orgId: req.orgId, state: 'open', currentTicketId: null },
@@ -164,30 +186,32 @@ router.post('/counters/:id/call-next', requireStaff, async (req, res, next) => {
     );
 
     if (!claimedCounter) {
-      return next(new AppError('COUNTER_BUSY', 409, 'Counter already has an active patient.'));
+      return next(new AppError('COUNTER_BUSY', 409, `Counter "${counter.name}" is currently occupied.`));
     }
 
-    // 3. Loop up to 5 times to claim next arrived ticket (§6.6 step 4)
     let claimedTicket = null;
 
-    for (let attempt = 0; attempt < 5; attempt++) {
-      // Find candidate arrived waiting tickets
+    if (ticketId) {
+      // Direct call on a specific ticket clicked from the staff dashboard row
       const candidate = await Ticket.findOne({
+        _id: ticketId,
         orgId: req.orgId,
         deptKey: counter.deptKey,
-        status: 'waiting',
-        arrived: true,
-      }).sort({ urgent: -1, urgentAt: 1, sortKey: 1, joinedAt: 1, _id: 1 });
+      });
 
       if (!candidate) {
-        // No arrived tickets -> release counter claim
         await Counter.findByIdAndUpdate(id, { $set: { currentTicketId: null } });
-        return next(new AppError('NO_ARRIVED_TICKETS', 404, 'No arrived patients waiting in this department.'));
+        return next(new AppError('NOT_FOUND', 404, 'Ticket not found.'));
       }
 
-      // Claim candidate ticket atomically
-      const lockedTicket = await Ticket.findOneAndUpdate(
-        { _id: candidate._id, status: 'waiting', arrived: true },
+      if (candidate.status === 'called' || candidate.status === 'serving') {
+        await Counter.findByIdAndUpdate(id, { $set: { currentTicketId: null } });
+        const calledTo = candidate.calledCounterName ? ` to ${candidate.calledCounterName}` : '';
+        return next(new AppError('ALREADY_CALLED', 409, `Ticket #${candidate.label} was already called${calledTo}.`));
+      }
+
+      claimedTicket = await Ticket.findOneAndUpdate(
+        { _id: ticketId, status: 'waiting' },
         {
           $set: {
             status: 'called',
@@ -199,22 +223,55 @@ router.post('/counters/:id/call-next', requireStaff, async (req, res, next) => {
         { new: true }
       );
 
-      if (lockedTicket) {
-        claimedTicket = lockedTicket;
-        break; // Successfully claimed ticket
+      if (!claimedTicket) {
+        await Counter.findByIdAndUpdate(id, { $set: { currentTicketId: null } });
+        return next(new AppError('ALREADY_CALLED', 409, `Ticket #${candidate.label} was just called by another counter.`));
       }
-      // Lost race to another counter: retry loop
-    }
+    } else {
+      // Automatic next arrived ticket (§6.6 step 4)
+      for (let attempt = 0; attempt < 5; attempt++) {
+        // Find candidate arrived waiting tickets, prioritized by urgent and arrival
+        const candidate = await Ticket.findOne({
+          orgId: req.orgId,
+          deptKey: counter.deptKey,
+          status: 'waiting',
+          arrived: true,
+        }).sort({ urgent: -1, urgentAt: 1, arrivedAt: 1, sortKey: 1, joinedAt: 1, _id: 1 });
 
-    if (!claimedTicket) {
-      // Release counter claim
-      await Counter.findByIdAndUpdate(id, { $set: { currentTicketId: null } });
-      return next(new AppError('ALREADY_CALLED', 409, 'Next waiting ticket was claimed concurrently. Please try again.'));
+        if (!candidate) {
+          // No arrived tickets -> release counter claim
+          await Counter.findByIdAndUpdate(id, { $set: { currentTicketId: null } });
+          return next(new AppError('NO_ARRIVED_TICKETS', 404, 'No arrived patients waiting in this department.'));
+        }
+
+        // Claim candidate ticket atomically
+        const lockedTicket = await Ticket.findOneAndUpdate(
+          { _id: candidate._id, status: 'waiting', arrived: true },
+          {
+            $set: {
+              status: 'called',
+              calledAt: currentTime,
+              counterId: counter._id,
+              calledCounterName: counter.name,
+            },
+          },
+          { new: true }
+        );
+
+        if (lockedTicket) {
+          claimedTicket = lockedTicket;
+          break;
+        }
+      }
+
+      if (!claimedTicket) {
+        await Counter.findByIdAndUpdate(id, { $set: { currentTicketId: null } });
+        return next(new AppError('ALREADY_CALLED', 409, 'Next waiting ticket was claimed concurrently. Please try again.'));
+      }
     }
 
     // 4. Set counter's currentTicketId to claimed ticket (§6.6 step 5)
-    counter.currentTicketId = claimedTicket._id;
-    await counter.save();
+    await Counter.findByIdAndUpdate(id, { $set: { currentTicketId: claimedTicket._id } });
 
     await recomputeAndLog(req.orgId, counter.deptKey, 'call', { counter: counter.name });
     sweepDepartment(req.orgId, counter.deptKey).catch(() => {});

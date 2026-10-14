@@ -242,14 +242,15 @@ export const api = {
   },
 
   // POST /api/staff/counters/:id/call-next (atomic)
-  callNext: async (counterId) => {
+  callNext: async (counterId, ticketId = null) => {
     const orgId = localStorage.getItem('nq-staff-org') || 'harbour';
     if (USE_MOCK) {
       await new Promise((r) => setTimeout(r, 150));
-      return mockEngine.callNext(orgId, counterId);
+      return mockEngine.callNext(orgId, counterId, ticketId);
     }
     return request(`/staff/counters/${counterId}/call-next`, {
       method: 'POST',
+      body: JSON.stringify(ticketId ? { ticketId } : {}),
     });
   },
 

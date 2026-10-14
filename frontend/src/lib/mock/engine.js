@@ -783,7 +783,7 @@ class MockEngine {
   }
 
   // POST /api/staff/counters/:id/call-next (Atomic)
-  callNext(orgId, counterId) {
+  callNext(orgId, counterId, ticketId = null) {
     const org = this.db.orgs.find((o) => o.id === orgId);
     let targetCounter, targetDept;
 
@@ -799,14 +799,45 @@ class MockEngine {
     if (!targetCounter) throw { status: 404, code: 'NOT_FOUND', message: 'Counter not found' };
     if (targetCounter.state !== 'open') throw { status: 400, code: 'COUNTER_NOT_OPEN', message: 'Counter is not open' };
 
-    // Find the first arrived waiting ticket
-    const arrivedTicket = this.db.tickets
-      .filter((t) => t.orgId === orgId && t.deptId === targetDept.id && t.status === 'waiting' && t.arrived)
-      .sort((a, b) => {
-        if (a.urgent && !b.urgent) return -1;
-        if (!a.urgent && b.urgent) return 1;
-        return a.sortKey - b.sortKey;
-      })[0];
+    // Auto-heal stale counter reference
+    if (targetCounter.currentTicketId) {
+      const existingActive = this.db.tickets.find(
+        (t) => t.id === targetCounter.currentTicketId && ['called', 'serving'].includes(t.status)
+      );
+      if (!existingActive) {
+        targetCounter.currentTicketId = null;
+      } else {
+        throw {
+          status: 409,
+          code: 'COUNTER_BUSY',
+          message: `Counter "${targetCounter.name}" already has an active patient (#${existingActive.label}). Finish or skip this consultation first.`,
+        };
+      }
+    }
+
+    let arrivedTicket = null;
+    if (ticketId) {
+      arrivedTicket = this.db.tickets.find(
+        (t) => t.id === ticketId && t.orgId === orgId && t.deptId === targetDept.id
+      );
+      if (!arrivedTicket) throw { status: 404, code: 'NOT_FOUND', message: 'Ticket not found' };
+      if (arrivedTicket.status === 'called' || arrivedTicket.status === 'serving') {
+        throw { status: 409, code: 'ALREADY_CALLED', message: `Ticket #${arrivedTicket.label} was already called.` };
+      }
+      if (arrivedTicket.status !== 'waiting') {
+        throw { status: 400, code: 'INVALID_STATE', message: `Cannot call ticket in status "${arrivedTicket.status}".` };
+      }
+    } else {
+      // Find the first arrived waiting ticket
+      arrivedTicket = this.db.tickets
+        .filter((t) => t.orgId === orgId && t.deptId === targetDept.id && t.status === 'waiting' && t.arrived)
+        .sort((a, b) => {
+          if (a.urgent && !b.urgent) return -1;
+          if (!a.urgent && b.urgent) return 1;
+          if (a.arrivedAt && b.arrivedAt && a.arrivedAt !== b.arrivedAt) return a.arrivedAt - b.arrivedAt;
+          return a.sortKey - b.sortKey;
+        })[0];
+    }
 
     if (!arrivedTicket) {
       throw { status: 404, code: 'NO_ARRIVED_TICKETS', message: 'No arrived patients in queue' };
@@ -815,6 +846,7 @@ class MockEngine {
     // Atomic update
     arrivedTicket.status = 'called';
     arrivedTicket.calledAt = this.now();
+    arrivedTicket.calledCounterName = targetCounter.name;
     targetCounter.currentTicketId = arrivedTicket.id;
 
     this.simulateQueue(orgId, targetDept.id);
