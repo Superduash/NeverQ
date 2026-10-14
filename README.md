@@ -2,8 +2,6 @@
 
 > Live hospital wait times on an interactive map, remote queueing without logins, ETA ranges, and leave-by planning.
 
-GitHub Repository: [https://github.com/Superduash/NeverQ](https://github.com/Superduash/NeverQ)
-
 ---
 
 ## 🎨 Typography & Design Identity
