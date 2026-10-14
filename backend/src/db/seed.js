@@ -1,4 +1,5 @@
-// backend/src/db/seed.js
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import env from '../config/env.js';
@@ -338,7 +339,8 @@ export async function resetToSeed() {
 }
 
 // Standalone CLI execution
-if (import.meta.url === `file://${process.argv[1]}`) {
+const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+if (isDirectRun) {
   const isReset = process.argv.includes('--reset');
 
   connectDB()

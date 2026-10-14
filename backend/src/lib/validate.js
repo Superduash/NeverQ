@@ -69,7 +69,7 @@ export const phoneSchema = z.string().transform((val, ctx) => {
   const norm = normalisePhone(val);
   if (!norm) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       message: 'Please enter a valid 10-digit Indian mobile number (starting with 6-9).',
     });
     return z.NEVER;

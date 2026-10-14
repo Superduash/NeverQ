@@ -9,9 +9,10 @@ export function errorHandler(err, req, res, _next) {
   // 1. Zod Validation Errors
   if (err instanceof ZodError) {
     const fields = {};
-    err.errors.forEach((e) => {
-      const key = e.path.join('.') || 'body';
-      fields[key] = e.message;
+    const issues = err.issues || err.errors || [];
+    issues.forEach((e) => {
+      const key = Array.isArray(e.path) ? e.path.join('.') : String(e.path || 'body');
+      fields[key || 'body'] = e.message;
     });
 
     return res.status(400).json({

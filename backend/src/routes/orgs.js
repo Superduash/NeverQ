@@ -1,6 +1,6 @@
 // backend/src/routes/orgs.js
-// Public org/hospital read endpoints (§5.1, §7, NeverQ2 §3.1)
-// GET /api/orgs           – list with wait ETAs and travel estimates
+// Public org/hospital read endpoints (Part 2.3)
+// GET /api/orgs           – list with wait ETAs and optional travel estimates
 // GET /api/orgs/:id       – single org detail with full departments
 // GET /api/orgs/:id/board – public wait board
 
@@ -14,17 +14,14 @@ import { now } from '../lib/clock.js';
 const router = Router();
 
 /**
- * Format a single org document with its departments and live queue/ETA snapshots.
+ * Format a single org document with all its departments and live queue/ETA snapshots.
  */
-async function formatOrgDetail(org, origin, rushFactor = 1.0, deptFilter = null) {
+async function formatOrgDetail(org, origin = null, rushFactor = 1.0, deptFilter = null) {
   // Query all departments for this org
   let deptDocs = await Department.find({ orgId: org._id }).sort({ order: 1 }).lean();
-  if (deptFilter) {
-    deptDocs = deptDocs.filter((d) => d.key === deptFilter);
-  }
 
   // Populate departments with live counters and queue snapshots
-  const departments = await Promise.all(
+  let departments = await Promise.all(
     deptDocs.map(async (d) => {
       const counters = await Counter.find({ orgId: org._id, deptKey: d.key }).lean();
       const waitingCount = await Ticket.countDocuments({
@@ -35,10 +32,13 @@ async function formatOrgDetail(org, origin, rushFactor = 1.0, deptFilter = null)
 
       let eta = null;
       let confidence = 'Estimating';
+      let confidenceLevel = 'low';
+
       try {
         const snapshot = await getQueueSnapshot(org._id, d.key);
         eta = snapshot.newJoiner;
         confidence = snapshot.confidence;
+        confidenceLevel = snapshot.confidenceLevel || 'low';
       } catch (err) {
         console.warn(`[Orgs] Could not get ETA snapshot for ${org._id}:${d.key}:`, err.message);
       }
@@ -53,18 +53,29 @@ async function formatOrgDetail(org, origin, rushFactor = 1.0, deptFilter = null)
         countersTotal: counters.length,
         eta,
         confidence,
+        confidenceLevel,
       };
     })
   );
 
-  // Calculate travel time and distance
-  const travel = estimateTravel(origin, { lat: org.lat, lng: org.lng }, 'car', rushFactor);
+  // If deptFilter is given, reorder departments so matching department is first
+  if (deptFilter && typeof deptFilter === 'string') {
+    const q = deptFilter.trim().toLowerCase();
+    if (q && q !== 'all') {
+      const matchIdx = departments.findIndex(
+        (d) => d.id.toLowerCase() === q || d.name.toLowerCase().includes(q)
+      );
+      if (matchIdx > 0) {
+        const matched = departments[matchIdx];
+        departments = [matched, ...departments.filter((_, idx) => idx !== matchIdx)];
+      }
+    }
+  }
 
-  return {
+  const resDoc = {
     id: org._id,
     name: org.name,
     category: org.category || 'hospital',
-    demo: Boolean(org.demo),
     open: org.open !== false,
     lat: org.lat,
     lng: org.lng,
@@ -73,14 +84,22 @@ async function formatOrgDetail(org, origin, rushFactor = 1.0, deptFilter = null)
     hours: org.hours || '08:00–20:00',
     rules: org.rules || {},
     departments,
-    distanceKm: travel.km,
-    travelMin: travel.minutes,
   };
+
+  // Only attach distance & travel if valid origin coordinates were provided
+  if (origin && Number.isFinite(origin.lat) && Number.isFinite(origin.lng)) {
+    const travel = estimateTravel(origin, { lat: org.lat, lng: org.lng }, 'car', rushFactor);
+    resDoc.distanceKm = travel.km;
+    resDoc.travelMin = travel.minutes;
+  }
+
+  return resDoc;
 }
 
 // GET /api/orgs
 router.get('/', async (req, res, next) => {
   try {
+    res.setHeader('Cache-Control', 'no-cache');
     const { lat, lng, dept, search } = req.query;
 
     const filter = {};
@@ -97,14 +116,34 @@ router.get('/', async (req, res, next) => {
     ]);
 
     const rushFactor = settings?.rushFactor || 1.0;
-    const origin = lat && lng ? { lat: Number(lat), lng: Number(lng) } : { lat: 13.04, lng: 80.24 };
 
-    const formattedList = await Promise.all(
+    // Validate origin coordinates; do NOT default to a fake origin
+    const validLat = lat !== undefined && lat !== null && lat !== '' && Number.isFinite(Number(lat));
+    const validLng = lng !== undefined && lng !== null && lng !== '' && Number.isFinite(Number(lng));
+    const origin = validLat && validLng ? { lat: Number(lat), lng: Number(lng) } : null;
+
+    let formattedList = await Promise.all(
       orgs.map((org) => formatOrgDetail(org, origin, rushFactor, dept))
     );
 
-    // Sort by distanceKm ascending
-    formattedList.sort((a, b) => (a.distanceKm || 0) - (b.distanceKm || 0));
+    // If dept filter is active and not 'All', only return hospitals containing matching dept
+    if (dept && typeof dept === 'string') {
+      const q = dept.trim().toLowerCase();
+      if (q && q !== 'all') {
+        formattedList = formattedList.filter((org) =>
+          org.departments.some(
+            (d) => d.id.toLowerCase() === q || d.name.toLowerCase().includes(q)
+          )
+        );
+      }
+    }
+
+    // Sort by distanceKm if origin provided, otherwise by hospital name
+    if (origin) {
+      formattedList.sort((a, b) => (a.distanceKm ?? 9999) - (b.distanceKm ?? 9999));
+    } else {
+      formattedList.sort((a, b) => a.name.localeCompare(b.name));
+    }
 
     res.json(formattedList);
   } catch (err) {
@@ -115,6 +154,7 @@ router.get('/', async (req, res, next) => {
 // GET /api/orgs/:id
 router.get('/:id', async (req, res, next) => {
   try {
+    res.setHeader('Cache-Control', 'no-cache');
     const org = await Org.findById(req.params.id).lean();
     if (!org) {
       return res.status(404).json({
@@ -126,9 +166,10 @@ router.get('/:id', async (req, res, next) => {
 
     const settings = await Settings.findById('global').lean();
     const rushFactor = settings?.rushFactor || 1.0;
-    const origin = req.query.lat && req.query.lng
-      ? { lat: Number(req.query.lat), lng: Number(req.query.lng) }
-      : { lat: 13.04, lng: 80.24 };
+
+    const validLat = req.query.lat !== undefined && Number.isFinite(Number(req.query.lat));
+    const validLng = req.query.lng !== undefined && Number.isFinite(Number(req.query.lng));
+    const origin = validLat && validLng ? { lat: Number(req.query.lat), lng: Number(req.query.lng) } : null;
 
     const formatted = await formatOrgDetail(org, origin, rushFactor, null);
     res.json(formatted);
@@ -137,9 +178,10 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// GET /api/orgs/:id/board (Phase 10.1 Public Wait Board)
+// GET /api/orgs/:id/board (Public Wait Board)
 router.get('/:id/board', async (req, res, next) => {
   try {
+    res.setHeader('Cache-Control', 'no-cache');
     const org = await Org.findById(req.params.id).lean();
     if (!org) {
       return res.status(404).json({

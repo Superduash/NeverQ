@@ -24,9 +24,16 @@ import {
 } from '../services/queue/helpers.js';
 import { recomputeAndLog, getQueueSnapshot } from '../services/eta/recompute.js';
 import { sweepDepartment } from '../services/queue/sweep.js';
+import { emitQueue, emitTicket } from '../services/realtime/emitter.js';
 import { AppError } from '../lib/errors.js';
 
 const router = Router();
+
+// Part 7: Cache-Control: no-store on /api/tickets/*
+router.use((_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 // ───────────── Validation Schemas ─────────────
 
@@ -176,6 +183,10 @@ router.post('/', joinLimiter, validate(createTicketSchema), async (req, res, nex
     // 10. Sweep department
     sweepDepartment(orgId, deptId).catch(() => {});
 
+    // Realtime emits (Part 2.4)
+    emitTicket(token);
+    emitQueue(orgId);
+
     // 11. Return 201 with public DTO (no phone!)
     const publicDTO = formatPublicTicketDTO(ticketDoc, org, dept, ticketEta?.position || 1, currentTime);
     res.status(201).json(publicDTO);
@@ -288,6 +299,10 @@ router.post('/:token/arrive', validate(arriveSchema), async (req, res, next) => 
     await recomputeAndLog(updated.orgId, updated.deptKey, 'arrive');
     sweepDepartment(updated.orgId, updated.deptKey).catch(() => {});
 
+    // Realtime emits (Part 2.4)
+    emitTicket(token);
+    emitQueue(updated.orgId);
+
     res.json({ success: true, arrivedAt: currentTime });
   } catch (err) {
     next(err);
@@ -321,6 +336,10 @@ router.post('/:token/cancel', async (req, res, next) => {
 
       await recomputeAndLog(ticket.orgId, ticket.deptKey, 'cancel');
       sweepDepartment(ticket.orgId, ticket.deptKey).catch(() => {});
+
+      // Realtime emits (Part 2.4)
+      emitTicket(token);
+      emitQueue(ticket.orgId);
 
       return res.json({ success: true, cancelledAt: currentTime });
     }

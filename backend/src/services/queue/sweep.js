@@ -6,6 +6,7 @@ import { Org, Department, Counter, Ticket, Settings } from '../../db/models/inde
 import { now } from '../../lib/clock.js';
 import { PENDING_SENTINEL } from './helpers.js';
 import { recomputeAndLog } from '../eta/recompute.js';
+import { emitQueue, emitTicket } from '../realtime/emitter.js';
 
 let sweepIntervalTimer = null;
 
@@ -227,7 +228,13 @@ export async function sweepDepartment(orgId, deptKey, injectedTime = null) {
   // ──────── S4: Recompute If Touched ────────
   if (touched) {
     try {
-      await recomputeAndLog(orgId, deptKey, 'sweep');
+      const res = await recomputeAndLog(orgId, deptKey, 'sweep');
+      emitQueue(orgId);
+      if (res?.affectedTokens?.length) {
+        for (const token of res.affectedTokens) {
+          emitTicket(token);
+        }
+      }
     } catch {
       // Non-fatal
     }
