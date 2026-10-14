@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { Org, Department, Counter, Ticket } from '../db/models/index.js';
 import { validate } from '../middleware/validate.js';
 import { joinLimiter } from '../middleware/rateLimit.js';
-import { normalizePhone, isValidCoordinate } from '../lib/validate.js';
+import { normalizePhone } from '../lib/validate.js';
 import { now } from '../lib/clock.js';
 import { haversine } from '../services/travel/estimate.js';
 import {

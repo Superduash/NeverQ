@@ -46,6 +46,23 @@ export function sanitiseName(name, defaultFallback = 'Anonymous Patient') {
   return cleaned.slice(0, 40);
 }
 
+/**
+ * Validates latitude and longitude values (§2.3)
+ */
+export function isValidCoordinate(lat, lng) {
+  return (
+    typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !(lat === 0 && lng === 0)
+  );
+}
+
 // ───────────── Zod Schemas ─────────────
 
 export const phoneSchema = z.string().transform((val, ctx) => {

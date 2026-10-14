@@ -79,7 +79,7 @@ FrontendQ.md
 BackendQ.md
 *.md
 !README.md
-!BackendIntegrationRef.md
+BackendIntegrationRef.md
 
 # Generated exports & prompt text dumps
 *.txt
