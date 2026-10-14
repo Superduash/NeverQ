@@ -37,9 +37,6 @@ export async function connectDB(explicitUri = null, retries = 5, delayMs = 1000)
         autoIndex: env.NODE_ENV !== 'production' || env.DEMO_MODE,
       });
 
-      // Enable sanitizeFilter globally
-      mongoose.set('sanitizeFilter', true);
-
       isConnected = true;
       console.log('[DB] Connected to MongoDB successfully.');
 

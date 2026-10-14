@@ -29,6 +29,13 @@ export const clock = {
   },
 
   /**
+   * Alias for setOffsetMs
+   */
+  setOffset(ms) {
+    return this.setOffsetMs(ms);
+  },
+
+  /**
    * Adjust offset by delta minutes.
    */
   addMinutes(minutes) {
