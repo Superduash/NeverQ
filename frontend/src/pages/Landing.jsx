@@ -179,21 +179,16 @@ export default function Landing() {
       const totalTime = travel.minutes + waitMid;
 
       let distanceLabel = '';
-      let travelLabel = '';
+      const travelLabel = `~${travel.minutes} min (${travelMode})`;
 
       if (isGPS) {
         distanceLabel = `${travel.km} km away`;
-        travelLabel = `~${travel.minutes} min (${travelMode})`;
       } else if (isSavedHome) {
         distanceLabel = `${travel.km} km from saved Home`;
-        travelLabel = `~${travel.minutes} min (saved Home)`;
       } else if (isCustomPin) {
         distanceLabel = `${travel.km} km from pin`;
-        travelLabel = `~${travel.minutes} min from pin`;
       } else {
-        // Never imply a real home-to-hospital distance from demo coordinates
-        distanceLabel = 'Chennai demo area';
-        travelLabel = 'GPS needed for distance';
+        distanceLabel = `${travel.km} km away (demo area)`;
       }
 
       return {
@@ -204,7 +199,7 @@ export default function Landing() {
         totalMin: totalTime,
         status: waitStatus(waitMid),
         isSaved: savedOrgIds.includes(h.id),
-        hasRealDistance,
+        hasRealDistance: true,
         isGPS,
         isSavedHome,
         isCustomPin,
@@ -1118,12 +1113,10 @@ export default function Landing() {
                 </div>
                 <div className="p-2 rounded-xl bg-[var(--surface-2)]">
                   <span className="text-[10px] text-[var(--ink-faint)] block">
-                    {selectedHospital.hasRealDistance ? `Travel (${travelMode})` : 'Location Mode'}
+                    Travel ({travelMode})
                   </span>
                   <span className="font-bold text-[var(--brand)] tnum">
-                    {selectedHospital.hasRealDistance
-                      ? `~${selectedHospital.travelMin}m (${selectedHospital.distanceKm} km)`
-                      : 'Chennai demo area'}
+                    ~{selectedHospital.travelMin}m ({selectedHospital.distanceKm} km)
                   </span>
                 </div>
               </div>
@@ -1405,25 +1398,12 @@ function HospitalCardItem({
         </div>
 
         <div className="text-right tnum shrink-0">
-          {hospital.hasRealDistance ? (
-            <>
-              <span className="text-xs font-semibold text-[var(--brand)] block">
-                {hospital.travelLabel}
-              </span>
-              <span className="text-[10px] text-[var(--ink-faint)] block">
-                {hospital.distanceLabel}
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="text-xs font-semibold text-[var(--ink-muted)] block">
-                Chennai demo area
-              </span>
-              <span className="text-[10px] text-[var(--brand)] block font-medium">
-                GPS needed for distance
-              </span>
-            </>
-          )}
+          <span className="text-xs font-semibold text-[var(--brand)] block">
+            {hospital.travelLabel}
+          </span>
+          <span className="text-[10px] text-[var(--ink-faint)] block">
+            {hospital.distanceLabel}
+          </span>
         </div>
       </div>
 
@@ -1506,12 +1486,10 @@ function HospitalSheetDetails({ hospital, travelMode, onClose, onJoin, onToggleS
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="p-2.5 rounded-2xl bg-[var(--surface-2)]">
           <span className="text-[10px] text-[var(--ink-faint)] block">
-            {hospital.hasRealDistance ? 'Estimated Travel' : 'Location Mode'}
+            Estimated Travel ({travelMode})
           </span>
           <span className="font-bold text-[var(--brand)] tnum">
-            {hospital.hasRealDistance
-              ? `${hospital.travelLabel} · ${hospital.distanceLabel}`
-              : 'Chennai demo area · Tap GPS for live distance'}
+            {hospital.travelLabel} · {hospital.distanceLabel}
           </span>
         </div>
         <div className="p-2.5 rounded-2xl bg-[var(--surface-2)]">

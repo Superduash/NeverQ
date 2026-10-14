@@ -49,6 +49,6 @@ export const isNearbyHospital = (from, hospital, thresholdKm = 0.30) => {
 export function directionsUrl(from, to, mode = 'car') {
   const travelmode = mode === 'walk' ? 'walking' : mode === 'bike' ? 'bicycling' : 'driving';
   const dest = `${to.lat},${to.lng}`;
-  const origin = isValidCoord(from) && !from.isDemo ? `&origin=${from.lat},${from.lng}` : '';
+  const origin = isValidCoord(from) ? `&origin=${from.lat},${from.lng}` : '';
   return `https://www.google.com/maps/dir/?api=1&destination=${dest}${origin}&travelmode=${travelmode}`;
 }

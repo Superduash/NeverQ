@@ -152,15 +152,9 @@ export default function HospitalView() {
             <Clock size={13} className="text-[var(--ink)]" />
             <span className="font-medium text-[var(--ink)]">{hospital.hours || 'Open today'}</span>
           </span>
-          {hasRealDistance ? (
-            <span className="tnum font-medium text-[var(--brand)]">
-              ~{travel.minutes} min ({travel.km} km {isSavedHome ? 'from saved Home' : 'away'})
-            </span>
-          ) : (
-            <span className="font-medium text-[var(--ink-muted)]">
-              Chennai demo area · GPS needed for live distance
-            </span>
-          )}
+          <span className="tnum font-medium text-[var(--brand)]">
+            ~{travel.minutes} min ({travel.km} km {isSavedHome ? 'from saved Home' : isGPS ? 'away' : 'from demo area'})
+          </span>
         </div>
       </div>
 
