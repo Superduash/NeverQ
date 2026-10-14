@@ -768,6 +768,7 @@ function CalledTakeoverPanel({ ticket, shouldReduceMotion }) {
   }, [ticket.calledAt]);
 
   const mins = Math.floor(secondsRemaining / 60);
+  const secs = String(secondsRemaining % 60).padStart(2, '0');
   // F-21: counter name from ticket, never invent 'Counter 1'
   const counterName = ticket.calledCounterName || ticket.counter?.name || 'your assigned counter';
 
