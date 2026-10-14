@@ -21,6 +21,7 @@ import {
   calculateSortKey,
 } from '../services/queue/helpers.js';
 import { recomputeAndLog } from '../services/eta/recompute.js';
+import { emitQueue } from '../services/realtime/emitter.js';
 import { AppError } from '../lib/errors.js';
 
 const router = Router();
@@ -412,6 +413,43 @@ router.post(
   }
 );
 
+const SIMULATED_FIRST_NAMES = [
+  'Aakash', 'Sunita', 'Karthik', 'Meera', 'Daniel', 'Fatima', 'Murugan', 'Deepa',
+  'Priya', 'Rohan', 'Ananya', 'Vikram', 'Divya', 'Suresh', 'Kavitha', 'Arjun',
+  'Swathi', 'Ganesh', 'Lakshmi', 'Rajesh', 'Pooja', 'Manoj', 'Bhavana', 'Dinesh',
+  'Saranya', 'Naveen', 'Revathi', 'Pradeep', 'Shalini', 'Venkatesh', 'Malini', 'Balaji',
+  'Shruti', 'Harish', 'Nandhini', 'Sanjay', 'Geetha', 'Ashwin', 'Pavithra', 'Vijay',
+  'Sowmya', 'Ramesh', 'Aparna', 'Vidyasagar', 'Sindhu', 'Kishore', 'Manjula', 'Ajith',
+  'Keerthana', 'Saravanan', 'Yamini', 'Gowtham', 'Madhavi', 'Senthil', 'Preethi', 'Kannan',
+  'Hemalatha', 'Mahesh', 'Usha', 'Surya', 'Sneha', 'Mohan', 'Aishwarya', 'Anand'
+];
+
+const SIMULATED_LAST_INITIALS = ['A.', 'B.', 'C.', 'D.', 'G.', 'K.', 'M.', 'N.', 'P.', 'R.', 'S.', 'T.', 'V.', 'Z.'];
+
+function generateUniquePatientName(existingNames) {
+  // First, try combinations of first name + initial not already present in existingNames
+  for (const fn of SIMULATED_FIRST_NAMES) {
+    for (const init of SIMULATED_LAST_INITIALS) {
+      const candidate = `${fn} ${init}`;
+      if (!existingNames.has(candidate)) {
+        existingNames.add(candidate);
+        return candidate;
+      }
+    }
+  }
+
+  // Fallback if very high numbers are simulated
+  let counter = 1;
+  while (true) {
+    const candidate = `Patient ${counter}`;
+    if (!existingNames.has(candidate)) {
+      existingNames.add(candidate);
+      return candidate;
+    }
+    counter++;
+  }
+}
+
 // POST /api/admin/demo/simulate & /simulate-patients
 const simulateHandler = async (req, res, next) => {
   try {
@@ -427,10 +465,15 @@ const simulateHandler = async (req, res, next) => {
     }
 
     const priorities = ['none', 'none', 'senior', 'pregnant', 'none', 'disabled'];
-    const names = [
-      'Aakash R.', 'Sunita P.', 'Karthik V.', 'Meera S.',
-      'Daniel K.', 'Fatima Z.', 'Murugan T.', 'Deepa N.',
-    ];
+
+    // Collect all existing active/waiting names to prevent duplicate names
+    const activeTickets = await Ticket.find({
+      orgId,
+      deptKey: deptId,
+      status: { $in: ['waiting', 'called', 'serving'] },
+    }).select('name').lean();
+
+    const existingNames = new Set(activeTickets.map((t) => t.name).filter(Boolean));
 
     const currentTime = now();
     const createdTickets = [];
@@ -442,13 +485,14 @@ const simulateHandler = async (req, res, next) => {
       const isArrived = i % 2 === 0;
       const joinedAt = currentTime - (count - i) * 2 * 60000;
       const sortKey = calculateSortKey(joinedAt, priority, 0, null, org.rules);
+      const uniqueName = generateUniquePatientName(existingNames);
 
       const ticket = await Ticket.create({
         orgId,
         deptKey: deptId,
         token,
         label,
-        name: names[i % names.length],
+        name: uniqueName,
         phone: '',
         deviceId: 'sim',
         source: 'walkin',
@@ -469,6 +513,7 @@ const simulateHandler = async (req, res, next) => {
 
     await recomputeAndLog(orgId, deptId, 'join');
     sweepDepartment(orgId, deptId).catch(() => {});
+    emitQueue(orgId);
 
     res.json({ simulated: createdTickets.length, tickets: createdTickets });
   } catch (err) {

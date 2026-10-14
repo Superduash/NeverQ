@@ -1110,7 +1110,46 @@ class MockEngine {
     const org = this.db.orgs.find((o) => o.id === orgId) || this.db.orgs[0];
     const dept = org.departments.find((d) => d.id === deptId) || org.departments[0];
     const priorities = ['none', 'none', 'senior', 'pregnant', 'none', 'disabled'];
-    const names = ['Aakash R.', 'Sunita P.', 'Karthik V.', 'Meera S.', 'Daniel K.', 'Fatima Z.', 'Murugan T.', 'Deepa N.'];
+
+    const firstNames = [
+      'Aakash', 'Sunita', 'Karthik', 'Meera', 'Daniel', 'Fatima', 'Murugan', 'Deepa',
+      'Priya', 'Rohan', 'Ananya', 'Vikram', 'Divya', 'Suresh', 'Kavitha', 'Arjun',
+      'Swathi', 'Ganesh', 'Lakshmi', 'Rajesh', 'Pooja', 'Manoj', 'Bhavana', 'Dinesh',
+      'Saranya', 'Naveen', 'Revathi', 'Pradeep', 'Shalini', 'Venkatesh', 'Malini', 'Balaji',
+      'Shruti', 'Harish', 'Nandhini', 'Sanjay', 'Geetha', 'Ashwin', 'Pavithra', 'Vijay',
+      'Sowmya', 'Ramesh', 'Aparna', 'Vidyasagar', 'Sindhu', 'Kishore', 'Manjula', 'Ajith',
+      'Keerthana', 'Saravanan', 'Yamini', 'Gowtham', 'Madhavi', 'Senthil', 'Preethi', 'Kannan',
+      'Hemalatha', 'Mahesh', 'Usha', 'Surya', 'Sneha', 'Mohan', 'Aishwarya', 'Anand'
+    ];
+    const lastInitials = ['A.', 'B.', 'C.', 'D.', 'G.', 'K.', 'M.', 'N.', 'P.', 'R.', 'S.', 'T.', 'V.', 'Z.'];
+
+    const existingNames = new Set(
+      this.db.tickets
+        .filter((t) => t.orgId === org.id && t.deptId === dept.id && ['waiting', 'called', 'serving'].includes(t.status))
+        .map((t) => t.name)
+        .filter(Boolean)
+    );
+
+    const getUniqueName = () => {
+      for (const fn of firstNames) {
+        for (const init of lastInitials) {
+          const cand = `${fn} ${init}`;
+          if (!existingNames.has(cand)) {
+            existingNames.add(cand);
+            return cand;
+          }
+        }
+      }
+      let c = 1;
+      while (true) {
+        const cand = `Patient ${c}`;
+        if (!existingNames.has(cand)) {
+          existingNames.add(cand);
+          return cand;
+        }
+        c++;
+      }
+    };
 
     const created = [];
     const now = this.now();
@@ -1122,6 +1161,7 @@ class MockEngine {
       const token = `sim-${Date.now()}-${i}`;
       const priority = priorities[i % priorities.length];
       const isArrived = i % 2 === 0;
+      const patientName = getUniqueName();
 
       const ticket = {
         id: `t-sim-${Date.now()}-${i}`,
@@ -1129,7 +1169,7 @@ class MockEngine {
         deptId: dept.id,
         token,
         label,
-        name: names[i % names.length],
+        name: patientName,
         phone: '',
         deviceId: 'sim',
         priority,
