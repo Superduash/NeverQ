@@ -215,17 +215,55 @@ router.get('/:token', async (req, res, next) => {
 
     let queuePosition = 0;
     if (ticket.status === 'waiting') {
-      const aheadCount = await Ticket.countDocuments({
-        orgId: ticket.orgId,
-        deptKey: ticket.deptKey,
-        status: 'waiting',
-        $or: [
-          { urgent: true, urgentAt: { $lt: ticket.urgentAt || Infinity } },
-          { sortKey: { $lt: ticket.sortKey } },
-          { sortKey: ticket.sortKey, joinedAt: { $lt: ticket.joinedAt } },
-          { sortKey: ticket.sortKey, joinedAt: ticket.joinedAt, _id: { $lt: ticket._id } },
-        ],
-      });
+      let aheadQuery;
+      if (ticket.urgent) {
+        aheadQuery = {
+          orgId: ticket.orgId,
+          deptKey: ticket.deptKey,
+          status: 'waiting',
+          urgent: true,
+          urgentAt: { $lt: ticket.urgentAt || Infinity },
+          _id: { $ne: ticket._id },
+        };
+      } else if (ticket.arrived) {
+        // Arrived patient: only urgent tickets or fellow arrived tickets with earlier arrival/sortKey are ahead
+        aheadQuery = {
+          orgId: ticket.orgId,
+          deptKey: ticket.deptKey,
+          status: 'waiting',
+          $or: [
+            { urgent: true },
+            {
+              arrived: true,
+              $or: [
+                { sortKey: { $lt: ticket.sortKey } },
+                { sortKey: ticket.sortKey, joinedAt: { $lt: ticket.joinedAt } },
+                { sortKey: ticket.sortKey, joinedAt: ticket.joinedAt, _id: { $lt: ticket._id } },
+              ],
+            },
+          ],
+        };
+      } else {
+        // Remote / not arrived yet: all urgent and all arrived tickets are ahead of remote patients
+        aheadQuery = {
+          orgId: ticket.orgId,
+          deptKey: ticket.deptKey,
+          status: 'waiting',
+          $or: [
+            { urgent: true },
+            { arrived: true },
+            {
+              arrived: { $ne: true },
+              $or: [
+                { sortKey: { $lt: ticket.sortKey } },
+                { sortKey: ticket.sortKey, joinedAt: { $lt: ticket.joinedAt } },
+                { sortKey: ticket.sortKey, joinedAt: ticket.joinedAt, _id: { $lt: ticket._id } },
+              ],
+            },
+          ],
+        };
+      }
+      const aheadCount = await Ticket.countDocuments(aheadQuery);
       queuePosition = aheadCount + 1;
     }
 

@@ -588,10 +588,15 @@ class MockEngine {
     const org = this.db.orgs.find((o) => o.id === ticket.orgId);
     const dept = org?.departments.find((d) => d.id === ticket.deptId);
 
-    // Calculate position
-    const waitingBefore = this.db.tickets.filter(
-      (t) => t.orgId === ticket.orgId && t.deptId === ticket.deptId && t.status === 'waiting' && t.sortKey < ticket.sortKey
-    ).length;
+    // Calculate position taking into account arrived priority
+    const waitingBefore = this.db.tickets.filter((t) => {
+      if (t.orgId !== ticket.orgId || t.deptId !== ticket.deptId || t.status !== 'waiting' || t.id === ticket.id) return false;
+      if (t.urgent && !ticket.urgent) return true;
+      if (!t.urgent && ticket.urgent) return false;
+      if (t.arrived && !ticket.arrived) return true;
+      if (!t.arrived && ticket.arrived) return false;
+      return t.sortKey < ticket.sortKey;
+    }).length;
 
     return {
       ...ticket,
@@ -616,7 +621,9 @@ class MockEngine {
     }
 
     ticket.arrived = true;
+    ticket.arrivedAt = this.now();
     ticket.arriveDeadline = null;
+    this.simulateQueue(ticket.orgId, ticket.deptId);
     this.save();
 
     mockEmitter.emit('ticket:update', ticket);
@@ -659,9 +666,20 @@ class MockEngine {
     const targetDeptId = deptId || org.departments[0]?.id;
     const dept = org.departments.find((d) => d.id === targetDeptId);
 
-    const tickets = this.db.tickets.filter(
-      (t) => t.orgId === orgId && t.deptId === targetDeptId && ['waiting', 'called', 'serving'].includes(t.status)
-    );
+    const tickets = this.db.tickets
+      .filter((t) => t.orgId === orgId && t.deptId === targetDeptId && ['waiting', 'called', 'serving'].includes(t.status))
+      .sort((a, b) => {
+        if (a.urgent && !b.urgent) return -1;
+        if (!a.urgent && b.urgent) return 1;
+        if (a.arrived && !b.arrived) return -1;
+        if (!a.arrived && b.arrived) return 1;
+        if (a.arrived && b.arrived) {
+          const aArr = a.arrivedAt || a.joinedAt || 0;
+          const bArr = b.arrivedAt || b.joinedAt || 0;
+          if (aArr !== bArr) return aArr - bArr;
+        }
+        return a.sortKey - b.sortKey;
+      });
     const completed = this.db.tickets
       .filter((t) => t.orgId === orgId && t.deptId === targetDeptId && t.status === 'done')
       .sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0))

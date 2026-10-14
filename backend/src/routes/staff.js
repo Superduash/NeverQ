@@ -108,7 +108,7 @@ router.get('/queue', requireStaff, async (req, res, next) => {
         deptKey,
         status: { $in: ['waiting', 'called', 'serving'] },
       })
-        .sort({ urgent: -1, urgentAt: 1, sortKey: 1, joinedAt: 1, _id: 1 })
+        .sort({ urgent: -1, urgentAt: 1, arrived: -1, arrivedAt: 1, sortKey: 1, joinedAt: 1, _id: 1 })
         .lean(),
       Ticket.find({
         orgId: req.orgId,

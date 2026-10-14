@@ -249,12 +249,34 @@ export default function StaffDashboard() {
 
   const displayTickets = useMemo(() => {
     if (filterMode === 'completed') return completedTickets;
-    return waitingTickets.filter((t) => {
-      if (filterMode === 'arrived') return t.arrived;
-      if (filterMode === 'not-arrived') return !t.arrived;
-      if (filterMode === 'priority') return t.priority && t.priority !== 'none';
-      return true;
-    });
+    return waitingTickets
+      .filter((t) => {
+        if (filterMode === 'arrived') return t.arrived;
+        if (filterMode === 'not-arrived') return !t.arrived;
+        if (filterMode === 'priority') return t.priority && t.priority !== 'none';
+        return true;
+      })
+      .sort((a, b) => {
+        // 1. Urgent patients always on top
+        if (a.urgent && !b.urgent) return -1;
+        if (!a.urgent && b.urgent) return 1;
+
+        // 2. Arrived patients prioritized above remote/not-arrived patients!
+        if (a.arrived && !b.arrived) return -1;
+        if (!a.arrived && b.arrived) return 1;
+
+        // 3. Among arrived patients, who arrived earlier
+        if (a.arrived && b.arrived) {
+          const aArr = a.arrivedAt || a.joinedAt || 0;
+          const bArr = b.arrivedAt || b.joinedAt || 0;
+          if (aArr !== bArr) return aArr - bArr;
+        }
+
+        // 4. Default priority sortKey
+        const aKey = a.sortKey ?? a.joinedAt ?? 0;
+        const bKey = b.sortKey ?? b.joinedAt ?? 0;
+        return aKey - bKey;
+      });
   }, [waitingTickets, completedTickets, filterMode]);
 
   const arrivedCount = waitingTickets.filter((t) => t.arrived).length;
