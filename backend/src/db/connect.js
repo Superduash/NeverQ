@@ -1,6 +1,16 @@
 // backend/src/db/connect.js
+import dns from 'node:dns';
 import mongoose from 'mongoose';
 import env from '../config/env.js';
+
+// Ensure MongoDB Atlas SRV lookup succeeds across Windows ISP/router DNS limitations
+if (typeof dns.setServers === 'function') {
+  try {
+    dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+  } catch (_e) {
+    // Keep default if restricted
+  }
+}
 
 let isConnected = false;
 
@@ -15,8 +25,8 @@ export async function connectDB(explicitUri = null, retries = 5, delayMs = 1000)
     if (env.NODE_ENV === 'test') {
       return; // Tests using mongodb-memory-server connect explicitly
     }
-    console.warn('[DB] MONGODB_URI not set. Running without MongoDB connection.');
-    return;
+    console.error('❌ [DB FATAL] MONGODB_URI is not set in environment! NeverQ requires MongoDB Atlas. Exiting.');
+    process.exit(1);
   }
 
   for (let attempt = 1; attempt <= retries; attempt++) {

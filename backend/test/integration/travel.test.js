@@ -5,11 +5,18 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { clock } from '../../src/lib/clock.js';
+import env from '../../src/config/env.js';
 
 let app;
+const originalOrs = env.ORS_ENABLED;
 
 beforeAll(() => {
+  env.ORS_ENABLED = false;
   app = createApp();
+});
+
+afterAll(() => {
+  env.ORS_ENABLED = originalOrs;
 });
 
 describe('Phase 5: Travel-Time Integration Tests (POST /api/travel)', () => {

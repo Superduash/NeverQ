@@ -14,10 +14,22 @@ const envSchema = z.object({
   STAFF_JWT_EXPIRES_IN: z.string().default('12h'),
   ADMIN_JWT_EXPIRES_IN: z.string().default('8h'),
   ADMIN_PASSWORD: z.string().default('admin1234'),
-  DEMO_MODE: z.preprocess((val) => val === 'true' || val === true || val === undefined, z.boolean()).default(true),
+  // SIM_TOOLS / DEMO_MODE: default true in dev, false in prod unless set
+  SIM_TOOLS: z.preprocess((val) => {
+    if (val !== undefined) return val === 'true' || val === true;
+    if (process.env.DEMO_MODE !== undefined) return process.env.DEMO_MODE === 'true' || process.env.DEMO_MODE === true;
+    return process.env.NODE_ENV !== 'production';
+  }, z.boolean()).default(true),
+  DEMO_MODE: z.preprocess((val) => {
+    if (val !== undefined) return val === 'true' || val === true;
+    if (process.env.SIM_TOOLS !== undefined) return process.env.SIM_TOOLS === 'true' || process.env.SIM_TOOLS === true;
+    return process.env.NODE_ENV !== 'production';
+  }, z.boolean()).default(true),
   SERVE_STATIC: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(false),
   ORS_API_KEY: z.string().optional().default(''),
   ORS_ENABLED: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(false),
+  GEMINI_API_KEY: z.string().optional().default(''),
+  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
   SEED_STAFF_PIN: z.string().default('1234'),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().default(60),
@@ -28,7 +40,7 @@ const envSchema = z.object({
   if (data.NODE_ENV === 'production') {
     if (!data.MONGODB_URI || (!data.MONGODB_URI.startsWith('mongodb://') && !data.MONGODB_URI.startsWith('mongodb+srv://'))) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['MONGODB_URI'],
         message: 'MONGODB_URI must be a valid MongoDB connection string in production',
       });
@@ -42,17 +54,17 @@ const envSchema = z.object({
     ];
     if (data.JWT_SECRET.length < 32 || placeholderSecrets.includes(data.JWT_SECRET.toLowerCase())) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['JWT_SECRET'],
         message: 'JWT_SECRET must be at least 32 characters long and not a placeholder in production',
       });
     }
 
-    if (!data.DEMO_MODE && data.ADMIN_PASSWORD.length < 10) {
+    if (!data.SIM_TOOLS && data.ADMIN_PASSWORD.length < 10) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['ADMIN_PASSWORD'],
-        message: 'ADMIN_PASSWORD must be at least 10 characters long in production (unless DEMO_MODE=true)',
+        message: 'ADMIN_PASSWORD must be at least 10 characters long in production (unless SIM_TOOLS=true)',
       });
     }
   }
@@ -62,10 +74,12 @@ const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
   console.error('❌ Invalid environment variables:');
-  parsed.error.errors.forEach((err) => {
-    console.error(`  - ${err.path.join('.')}: ${err.message}`);
+  const issues = parsed.error.issues || parsed.error.errors || [];
+  issues.forEach((err) => {
+    const p = Array.isArray(err.path) ? err.path.join('.') : err.path;
+    console.error(`  - ${p}: ${err.message}`);
   });
-  throw new Error(`Environment validation failed: ${parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+  throw new Error(`Environment validation failed: ${issues.map(e => `${Array.isArray(e.path) ? e.path.join('.') : e.path}: ${e.message}`).join(', ')}`);
 }
 
 export const env = parsed.data;
