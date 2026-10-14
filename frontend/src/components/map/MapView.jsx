@@ -348,11 +348,13 @@ export function MapView({
     } else {
       removeRouteLayer(map);
     }
-
-    return () => {
-      removeRouteLayer(map);
-    };
   }, [route]);
+
+  useEffect(() => {
+    return () => {
+      if (mapRef.current) removeRouteLayer(mapRef.current);
+    };
+  }, []);
 
   // ───────────── Smooth Center on User/Pick Change (After Initial Load) ─────────────
   useEffect(() => {

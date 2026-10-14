@@ -67,10 +67,12 @@ export function checkEmergency(query) {
   return false;
 }
 
+import { estimateTravel, DEMO_HOME } from '../../lib/geo.js';
+
 /**
  * Matches input text to the most relevant department and best hospital.
  */
-export function matchNeedToDepartment(query, hospitals = []) {
+export function matchNeedToDepartment(query, hospitals = [], origin = null, travelMode = 'car') {
   const text = query.toLowerCase();
 
   // 1. Emergency safety check
@@ -100,7 +102,7 @@ export function matchNeedToDepartment(query, hospitals = []) {
 
   // Default to General OPD if asked broadly for "doctor", "appointment", "hospital", "nearest", or "fastest"
   if (!matchedDeptName) {
-    if (text.includes('fastest') || text.includes('nearest') || text.includes('doctor') || text.includes('appointment')) {
+    if (text.includes('fastest') || text.includes('nearest') || text.includes('doctor') || text.includes('appointment') || text.includes('checkup')) {
       matchedDeptName = 'General OPD';
     }
   }
@@ -112,9 +114,20 @@ export function matchNeedToDepartment(query, hospitals = []) {
     };
   }
 
-  // 3. Find hospitals offering this department
+  const effectiveOrigin = origin || DEMO_HOME;
+
+  // 3. Find hospitals offering this department (with flexible name matching)
   const eligibleHospitals = hospitals.filter((h) =>
-    h.departments?.some((d) => d.name === matchedDeptName)
+    h.departments?.some((d) => {
+      const dName = d.name?.toLowerCase() || '';
+      const target = matchedDeptName.toLowerCase();
+      return (
+        dName === target ||
+        dName.includes(target) ||
+        target.includes(dName) ||
+        (target.includes('general') && (d.id === 'gen' || d.key === 'gen'))
+      );
+    })
   );
 
   if (eligibleHospitals.length === 0) {
@@ -125,22 +138,57 @@ export function matchNeedToDepartment(query, hospitals = []) {
     };
   }
 
-  // Rank by fastest wait time for the matched department
+  // Rank by lowest total door-to-doctor time using authoritative travel + wait calculation
   const ranked = eligibleHospitals.map((h) => {
-    const dept = h.departments.find((d) => d.name === matchedDeptName);
-    const waitMid = dept?.eta?.mid || 15;
-    const travelMin = h.travelMin || 12;
+    const dept = h.departments?.find((d) => {
+      const dName = d.name?.toLowerCase() || '';
+      const target = matchedDeptName.toLowerCase();
+      return (
+        dName === target ||
+        dName.includes(target) ||
+        target.includes(dName) ||
+        (target.includes('general') && (d.id === 'gen' || d.key === 'gen'))
+      );
+    }) || h.departments?.[0];
+
+    // F-02: 0 is valid wait (idle counter), never substitute fake 15 min default
+    const waitMid = typeof dept?.eta?.mid === 'number' ? dept.eta.mid : 0;
+    const waitLow = typeof dept?.eta?.low === 'number' ? dept.eta.low : waitMid;
+    const waitHigh = typeof dept?.eta?.high === 'number' ? dept.eta.high : waitMid;
+
+    // Real travel estimation matching hospital cards
+    const travel = estimateTravel(effectiveOrigin, { lat: h.lat, lng: h.lng }, travelMode);
+    const travelMin = travel.minutes;
+    const distanceKm = travel.km;
     const totalMin = waitMid + travelMin;
+
     return {
       hospital: h,
       dept,
       waitMid,
+      waitLow,
+      waitHigh,
       travelMin,
+      distanceKm,
       totalMin,
     };
-  }).sort((a, b) => a.totalMin - b.totalMin);
+  }).sort((a, b) => {
+    // Lowest total estimated time (door-to-doctor) first
+    if (a.totalMin !== b.totalMin) {
+      return a.totalMin - b.totalMin;
+    }
+    // If total time is tied, hospital with shorter queue wait wins
+    if (a.waitMid !== b.waitMid) {
+      return a.waitMid - b.waitMid;
+    }
+    return a.distanceKm - b.distanceKm;
+  });
 
   const best = ranked[0];
+
+  const waitDescription = best.waitMid === 0
+    ? 'No wait (immediate)'
+    : `~${best.waitLow}–${best.waitHigh} min wait`;
 
   return {
     type: 'recommendation',
@@ -151,6 +199,6 @@ export function matchNeedToDepartment(query, hospitals = []) {
     travelMin: best.travelMin,
     totalMin: best.totalMin,
     alternatives: ranked.slice(1, 3),
-    message: `For ${matchedDeptName}, ${best.hospital.name} is currently your fastest option with ~${best.dept.eta.low}–${best.dept.eta.high} min wait (~${best.travelMin}m travel).`,
+    message: `For ${matchedDeptName}, ${best.hospital.name} is currently your fastest option with ${waitDescription} and ~${best.travelMin} min travel (Total estimated: ~${best.totalMin} min).`,
   };
 }

@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { matchNeedToDepartment, checkEmergency } from './assistantMatcher.js';
 import { api } from '../../lib/api.js';
+import { useOrigin } from '../../lib/location.js';
+import { storage } from '../../lib/storage.js';
 
 const PROMPT_CHIPS = [
   'Book an eye checkup',
@@ -17,6 +19,7 @@ const PROMPT_CHIPS = [
 export function Assistant() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [userLocation] = useOrigin();
 
   const [isOpen, setIsOpen] = useState(false);
   const [isDismissed, setIsDismissed] = useState(() => {
@@ -139,8 +142,9 @@ export function Assistant() {
       text,
     };
 
-    // Run deterministic rule-based matcher instantly
-    const result = matchNeedToDepartment(text, hospitals);
+    // Run deterministic rule-based matcher with authoritative origin and travelMode
+    const travelMode = storage.getTravelMode?.() || 'car';
+    const result = matchNeedToDepartment(text, hospitals, userLocation, travelMode);
 
     const botMsg = {
       id: `a-${Date.now()}`,
@@ -151,7 +155,7 @@ export function Assistant() {
 
     setMessages((prev) => [...prev, userMsg, botMsg]);
     setInput('');
-  }, [input, hospitals]);
+  }, [input, hospitals, userLocation]);
 
   const handleClearChat = () => {
     setMessages([

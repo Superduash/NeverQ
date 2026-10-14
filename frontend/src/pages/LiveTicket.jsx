@@ -113,6 +113,25 @@ export default function LiveTicket() {
     return estimateTravel(userLocation || DEMO_HOME, { lat: ticket.org.lat, lng: ticket.org.lng }, travelMode);
   }, [ticket, userLocation, travelMode]);
 
+  // Stable route geometry with realistic street alignment
+  const routeCoordinates = useMemo(() => {
+    if (!ticket?.org || typeof ticket.org.lat !== 'number' || typeof ticket.org.lng !== 'number') return null;
+    const originLng = (userLocation || DEMO_HOME).lng;
+    const originLat = (userLocation || DEMO_HOME).lat;
+    const destLng = ticket.org.lng;
+    const destLat = ticket.org.lat;
+
+    const midLng = originLng + (destLng - originLng) * 0.55;
+    const midLat = originLat + (destLat - originLat) * 0.45;
+    return [
+      [originLng, originLat],
+      [midLng, originLat],
+      [midLng, midLat],
+      [destLng, midLat],
+      [destLng, destLat],
+    ];
+  }, [ticket?.org, userLocation]);
+
   // F-02: use ?? null so a real wait of 0 isn't replaced by 15
   const etaMid = ticket?.lastEta?.mid ?? null;
   const leavePlan = useMemo(() => {
@@ -638,10 +657,7 @@ export default function LiveTicket() {
                     });
                     setArriveError(null);
                   }}
-                  route={[
-                    [(userLocation || DEMO_HOME).lng, (userLocation || DEMO_HOME).lat],
-                    [ticket.org.lng, ticket.org.lat],
-                  ]}
+                  route={routeCoordinates}
                   center={[ticket.org.lng, ticket.org.lat]}
                   zoom={12.5}
                 />
