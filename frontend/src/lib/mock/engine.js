@@ -291,6 +291,7 @@ class MockEngine {
     return `Higher — based on ${n} recent consultations`;
   }
 
+  // MOCK: not NeverQ2 §4 (mock ETA maths remains simplified; authoritative ETA is in backend Phase 4)
   // Multi-counter simulation of queue
   simulateQueue(orgId, deptId) {
     const org = this.db.orgs.find((o) => o.id === orgId);
@@ -1220,6 +1221,120 @@ class MockEngine {
     this.save();
     mockEmitter.emit('queue:update', { reason: 'toggle-status' });
     return org;
+  }
+
+  // ───────────── Phase 0.11 Contracts ─────────────
+
+  // GET /api/staff/insights?deptId=
+  getStaffInsights(deptId) {
+    let targetDept;
+    for (const org of this.db.orgs) {
+      const d = org.departments?.find((item) => item.id === deptId);
+      if (d) { targetDept = d; break; }
+    }
+    const defaultMin = targetDept?.defaultMin || 12;
+    const stats = targetDept?.stats || { n: 0, mean: defaultMin, m2: 0 };
+    const variance = stats.n > 1 ? stats.m2 / (stats.n - 1) : Math.pow(defaultMin * 0.35, 2);
+    const sd = Number(Math.sqrt(Math.max(0, variance)).toFixed(1));
+    const expectedMin = this.calculateExpectedDuration(targetDept || { defaultMin, stats });
+    const confidenceLevel = stats.n >= 10 ? 'high' : stats.n >= 3 ? 'medium' : 'low';
+    const confidence = this.getDeptConfidence(targetDept || { stats });
+
+    const completed = this.db.tickets.filter((t) => (t.deptId === deptId || !deptId) && t.status === 'done');
+    const rows = completed.slice(-10).map((t) => ({
+      label: t.label,
+      predictedMin: t.firstEta?.mid || defaultMin,
+      actualMin: t.doneAt && t.startedAt ? Math.round((t.doneAt - t.startedAt) / 60000) : defaultMin,
+      simulated: !!t.simulated,
+    }));
+
+    return {
+      deptId,
+      deptName: targetDept?.name || 'General OPD',
+      defaultMin,
+      stats: { n: stats.n || 0, mean: Number((stats.mean || defaultMin).toFixed(1)), sd },
+      expectedMin: Number(expectedMin.toFixed(1)),
+      confidenceLevel,
+      confidence,
+      history: [12.0, 12.5, 12.8, 13.0, Number((stats.mean || defaultMin).toFixed(1))],
+      rows: rows.length ? rows : [
+        { label: 'G-008', predictedMin: 12, actualMin: 11, simulated: true },
+        { label: 'G-009', predictedMin: 14, actualMin: 15, simulated: true },
+        { label: 'G-010', predictedMin: 10, actualMin: 10, simulated: false },
+      ],
+      coverage: 80.0,
+    };
+  }
+
+  // GET /api/staff/tickets/:id/phone
+  revealPhone(ticketId) {
+    const ticket = this.db.tickets.find((t) => t.id === ticketId);
+    if (!ticket) throw { status: 404, code: 'NOT_FOUND', message: 'Ticket not found' };
+    return { phone: ticket.phone || '+91 98765 43210' };
+  }
+
+  // POST /api/admin/demo/scenario
+  demoScenario({ type, orgId, deptId }) {
+    const org = this.db.orgs.find((o) => o.id === orgId) || this.db.orgs[0];
+    const dept = org.departments?.find((d) => d.id === deptId) || org.departments?.[0];
+    const counters = dept?.counters || [];
+
+    if (type === 'delay') {
+      const c = counters[0];
+      if (c) {
+        c.delayUntil = this.now() + 15 * 60 * 1000;
+        c.delayReason = 'Emergency phone consult';
+      }
+    } else if (type === 'open-counter' || type === 'open-c2') {
+      const c = counters[1] || counters[0];
+      if (c) c.state = 'open';
+    } else if (type === 'urgent') {
+      this.insertUrgent(org.id, dept.id, { name: 'Triage Patient', reason: 'Critical breathlessness' });
+    } else if (type === 'no-show') {
+      const t = this.createTicket({
+        orgId: org.id,
+        deptId: dept.id,
+        name: 'Remote Patient (No-show demo)',
+        phone: '+919888800000',
+        priority: 'none',
+      });
+      t.arriveDeadline = this.now() - 1000;
+      this.sweep();
+    } else if (type === 'story-setup') {
+      const harbour = this.db.orgs.find((o) => o.id === 'harbour');
+      if (harbour) {
+        const eye = harbour.departments.find((d) => d.id === 'eye');
+        if (eye) eye.stats = { n: 2, mean: 24, m2: 12 };
+      }
+    }
+
+    if (dept) this.simulateQueue(org.id, dept.id);
+    this.save();
+    mockEmitter.emit('queue:update', { orgId: org.id, deptId: dept?.id, reason: type });
+    return { success: true, scenario: type };
+  }
+
+  // POST /api/admin/demo/clock
+  demoSetClock({ offsetMinutes }) {
+    this.db.settings.clockOffsetMs = (Number(offsetMinutes) || 0) * 60 * 1000;
+    this.sweep();
+    this.save();
+    mockEmitter.emit('queue:update', { reason: 'clock-set' });
+    return {
+      clockOffsetMs: this.db.settings.clockOffsetMs,
+      offsetMinutes: Math.round(this.db.settings.clockOffsetMs / (60 * 1000)),
+    };
+  }
+
+  // GET /api/meta
+  getMeta() {
+    return {
+      serverNow: this.now(),
+      clockOffsetMs: this.db.settings.clockOffsetMs || 0,
+      rushFactor: this.db.settings.rushFactor || 1,
+      demo: true,
+      version: '0.1.0',
+    };
   }
 }
 

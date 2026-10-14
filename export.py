@@ -47,9 +47,12 @@ EXCLUDE_DIRS = {
     "coverage",
     "__pycache__",
     ".system_generated",
+    ".agents",
     "venv",
     ".venv",
     "env",
+    "scratch",
+    "Files",
 }
 
 # File extensions containing essential project code or configuration
@@ -80,6 +83,7 @@ IGNORE_FILES = {
     "yarn.lock",
     "pnpm-lock.yaml",
     "FrontendQ.md",       # Prompt instruction blueprint
+    "BackendQ.md",        # Prompt instruction blueprint
     "frontend.txt",
     "backend.txt",
     "codebase.txt",
@@ -226,6 +230,7 @@ def main():
         root_dir / "start.bat",
         root_dir / "README.md",
         root_dir / "BackendIntegrationRef.md",
+        root_dir / "render.yaml",
         root_dir / ".gitignore",
     ]:
         if candidate.exists() and is_important_file(candidate):

@@ -16,7 +16,7 @@ class SocketManager {
     // F-10: ref-counted rooms so leaveRoom only emits when count reaches 0
     this.roomRefs = new Map(); // room -> count
     this.statusListeners = new Set();
-    this.state = 'connected'; // 'connected' | 'reconnecting' | 'disconnected'
+    this.state = USE_MOCK ? 'connected' : 'disconnected'; // F-06: starts disconnected in real mode
 
     if (!USE_MOCK) {
       this.initRealSocket();
@@ -28,8 +28,14 @@ class SocketManager {
     return localStorage.getItem('nq-staff-token') || localStorage.getItem('nq-admin-token') || null;
   }
 
+  setAuth(token) {
+    if (!USE_MOCK && this.socket) {
+      this.socket.auth = (cb) => cb({ token });
+      this.socket.disconnect().connect();
+    }
+  }
+
   initRealSocket() {
-    const token = this._getAuthToken();
     this.socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 10,
@@ -42,6 +48,10 @@ class SocketManager {
       this.updateState('connected');
       // Re-join all active rooms on reconnect
       this.roomRefs.forEach((_, room) => this.socket.emit('room:join', room));
+    });
+
+    this.socket.on('room:denied', ({ room, reason }) => {
+      console.warn(`[Socket] Room access denied for "${room}": ${reason}`);
     });
 
     this.socket.on('reconnect_attempt', () => {

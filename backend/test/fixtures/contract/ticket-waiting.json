@@ -1,0 +1,30 @@
+{
+  "token": "xK8mP2vL9qR5tY1wZ4aB7c",
+  "id": "670c5b3e2a1b3c4d5e6f7a8b",
+  "label": "G-015",
+  "name": "Ananya Sharma",
+  "status": "waiting",
+  "position": 3,
+  "priority": "none",
+  "source": "remote",
+  "arrived": false,
+  "arrivedAt": null,
+  "lateCount": 0,
+  "firstEta": { "low": 12, "mid": 16, "high": 22, "startMs": 1728841000000 },
+  "lastEta": { "low": 10, "mid": 14, "high": 20, "startMs": 1728840900000 },
+  "changes": [
+    { "minutes": -2, "text": "A consultation finished at Desk 1", "time": 1728840050000 }
+  ],
+  "org": {
+    "id": "harbour",
+    "name": "Harbour Care Clinic",
+    "lat": 13.0338,
+    "lng": 80.2676
+  },
+  "dept": {
+    "id": "gen",
+    "name": "General OPD",
+    "confidence": "Medium — based on 5 recent consultations"
+  },
+  "serverNow": 1728840100000
+}

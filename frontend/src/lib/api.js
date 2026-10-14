@@ -4,10 +4,13 @@
 import { mockEngine } from './mock/engine.js';
 import { notify } from './notify.js';
 import { getErrorMessage } from './messages.js';
+import { clock } from './clock.js';
+import { estimateTravel } from './travelModel.js';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
-// F-23: empty VITE_API_URL → same-origin /api (no hard localhost fallback)
-const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+// F-23: empty VITE_API_URL → '/api'; undefined in dev → 'http://localhost:4000/api'
+const envApiUrl = import.meta.env.VITE_API_URL;
+const BASE_URL = envApiUrl === '' ? '/api' : (envApiUrl || (import.meta.env.DEV ? 'http://localhost:4000/api' : '/api'));
 
 // Helper for Real API HTTP Requests
 async function request(endpoint, options = {}) {
@@ -17,13 +20,13 @@ async function request(endpoint, options = {}) {
     ...(options.headers || {}),
   };
 
-  // Attach auth tokens if available
-  const staffToken = localStorage.getItem('nq-staff-token');
-  const adminToken = localStorage.getItem('nq-admin-token');
-  if (options.role === 'admin' && adminToken) {
-    headers['Authorization'] = `Bearer ${adminToken}`;
-  } else if (staffToken) {
-    headers['Authorization'] = `Bearer ${staffToken}`;
+  // Attach auth tokens by path prefix (not blanket attach)
+  if (endpoint.startsWith('/admin')) {
+    const adminToken = localStorage.getItem('nq-admin-token');
+    if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+  } else if (endpoint.startsWith('/staff')) {
+    const staffToken = localStorage.getItem('nq-staff-token');
+    if (staffToken) headers['Authorization'] = `Bearer ${staffToken}`;
   }
 
   // Phase D.4: Render cold-start detection (>3s triggers waking server notice)
@@ -46,17 +49,31 @@ async function request(endpoint, options = {}) {
     if (wakeTimer) clearTimeout(wakeTimer);
     notify.dismiss('nq-waking-server');
 
+    // Sync server demo clock if header is present
+    const serverNow = res.headers.get('X-NQ-Server-Now');
+    if (serverNow) {
+      clock.sync(Number(serverNow));
+    }
+
     if (res.status === 401) {
-      // 401 Unauthorized handler
-      if (options.role === 'admin') {
-        localStorage.removeItem('nq-admin-token');
-        window.location.href = '/admin/login';
-      } else {
-        localStorage.removeItem('nq-staff-token');
-        window.location.href = '/staff/login';
+      const isLoginCall = endpoint === '/staff/login' || endpoint === '/admin/login';
+      if (!isLoginCall) {
+        if (endpoint.startsWith('/admin')) {
+          localStorage.removeItem('nq-admin-token');
+          window.location.href = '/admin/login';
+        } else if (endpoint.startsWith('/staff')) {
+          localStorage.removeItem('nq-staff-token');
+          window.location.href = '/staff/login';
+        }
+        notify.error('Session expired. Please log in again.');
       }
-      notify.error('Session expired. Please log in again.');
-      throw { status: 401, code: 'AUTH_REQUIRED', message: 'Session expired' };
+      const errBody = await res.json().catch(() => ({}));
+      throw {
+        ...errBody,
+        status: 401,
+        code: errBody.code || 'AUTH_REQUIRED',
+        message: errBody.message || 'Authentication required',
+      };
     }
 
     const data = await res.json().catch(() => ({}));
@@ -165,35 +182,10 @@ export const api = {
   travel: async ({ from, to, mode = 'car' }) => {
     const rush = USE_MOCK ? (mockEngine.db?.settings?.rushFactor || 1) : 1;
 
-    // Timeout helper
-    // F-04: use the same geo.js formula (walk 4.5, bike 14, car 22 × road factor 1.35)
-    const ROAD_FACTOR = 1.35;
-    const SPEEDS = { walk: 4.5, bike: 14.0, car: 22.0 };
     const fetchWithTimeout = async () => {
       if (USE_MOCK) {
         await new Promise((r) => setTimeout(r, 60));
-        const speed = SPEEDS[mode] || SPEEDS.car;
-        const lat1 = from?.lat || 13.0827;
-        const lon1 = from?.lng || 80.2707;
-        const lat2 = to?.lat || 13.0450;
-        const lon2 = to?.lng || 80.2450;
-        const R = 6371;
-        const dLat = (lat2 - lat1) * Math.PI / 180;
-        const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-          Math.sin(dLon/2) * Math.sin(dLon/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        const straightKm = R * c;
-        const roadKm = Number((straightKm * ROAD_FACTOR).toFixed(1));
-        const minutes = Math.max(1, Math.round((roadKm / speed) * 60 * rush));
-
-        return {
-          minutes,
-          km: roadKm,
-          source: 'estimate',
-          label: 'approx.',
-        };
+        return estimateTravel(from, to, mode, rush);
       }
 
       return request('/travel', {
@@ -210,13 +202,8 @@ export const api = {
       ]);
       return result;
     } catch {
-      // Fallback estimate
-      return {
-        minutes: 15,
-        km: 3.5,
-        source: 'estimate',
-        label: 'approx.',
-      };
+      // Fallback: local estimateTravel (never constant 15 min / 3.5 km)
+      return estimateTravel(from, to, mode, rush);
     }
   },
 
@@ -506,5 +493,55 @@ export const api = {
       method: 'POST',
       role: 'admin',
     });
+  },
+
+  // GET /api/staff/insights?deptId=
+  getStaffInsights: async (deptId) => {
+    if (USE_MOCK) {
+      await new Promise((r) => setTimeout(r, 80));
+      return mockEngine.getStaffInsights(deptId);
+    }
+    return request(`/staff/insights?deptId=${deptId || ''}`);
+  },
+
+  // GET /api/staff/tickets/:id/phone
+  revealPhone: async (ticketId) => {
+    if (USE_MOCK) {
+      return mockEngine.revealPhone(ticketId);
+    }
+    return request(`/staff/tickets/${ticketId}/phone`);
+  },
+
+  // POST /api/admin/demo/scenario
+  demoScenario: async ({ type, orgId, deptId }) => {
+    if (USE_MOCK) {
+      await new Promise((r) => setTimeout(r, 80));
+      return mockEngine.demoScenario({ type, orgId, deptId });
+    }
+    return request('/admin/demo/scenario', {
+      method: 'POST',
+      body: JSON.stringify({ type, orgId, deptId }),
+      role: 'admin',
+    });
+  },
+
+  // POST /api/admin/demo/clock
+  demoSetClock: async ({ offsetMinutes }) => {
+    if (USE_MOCK) {
+      return mockEngine.demoSetClock({ offsetMinutes });
+    }
+    return request('/admin/demo/clock', {
+      method: 'POST',
+      body: JSON.stringify({ offsetMinutes }),
+      role: 'admin',
+    });
+  },
+
+  // GET /api/meta
+  getMeta: async () => {
+    if (USE_MOCK) {
+      return mockEngine.getMeta();
+    }
+    return request('/meta');
   },
 };

@@ -1,51 +1,81 @@
 // backend/src/middleware/rateLimit.js
-// Configurable rate limiters (Phase 1.3)
-
 import rateLimit from 'express-rate-limit';
+import env from '../config/env.js';
 
-const windowMs = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60_000; // 1 min
-const max = Number(process.env.RATE_LIMIT_MAX) || 60;
-const joinMax = Number(process.env.JOIN_RATE_LIMIT_MAX) || 5;
-
-// Standard error response format
-const handler = (req, res) => {
+// Standard error response format matching NeverQ JSON contract
+const rateLimitHandler = (req, res, _next, options) => {
+  const retryAfterSec = Math.ceil(options.windowMs / 1000);
+  res.setHeader('Retry-After', retryAfterSec);
   res.status(429).json({
     status: 429,
     code: 'RATE_LIMIT',
-    message: 'Too many requests. Please wait a moment before trying again.',
-    retryAfterMs: windowMs,
+    message: 'Too many attempts. Please wait before trying again.',
+    retryAfterMs: options.windowMs,
+    requestId: req.id || null,
   });
 };
 
-// General API rate limiter
+// General API rate limiter (60/min default)
 export const apiLimiter = rateLimit({
-  windowMs,
-  max,
+  windowMs: env.RATE_LIMIT_WINDOW_MS || 60_000,
+  max: env.RATE_LIMIT_MAX || 60,
   standardHeaders: true,
   legacyHeaders: false,
-  handler,
-  keyGenerator: (req) => req.headers['x-forwarded-for']?.split(',')[0] || req.ip,
+  handler: rateLimitHandler,
+  skip: () => env.NODE_ENV === 'test',
 });
 
-// Tighter limit for ticket creation (anti-spam)
+// Tighter limit for ticket creation (NeverQ2 anti-spam)
 export const joinLimiter = rateLimit({
-  windowMs,
-  max: joinMax,
+  windowMs: 60_000,
+  max: env.JOIN_RATE_LIMIT_MAX || 8,
   standardHeaders: true,
   legacyHeaders: false,
-  handler,
+  handler: rateLimitHandler,
   keyGenerator: (req) => {
-    // Key on device-id + IP together
-    const deviceId = req.headers['x-device-id'] || req.body?.deviceId || req.ip;
-    return deviceId;
+    const deviceId = req.headers['x-device-id'] || req.body?.deviceId || '';
+    return `${req.ip}_${deviceId}`;
   },
+  validate: { keyGeneratorIpFallback: false },
+  skip: () => env.NODE_ENV === 'test',
 });
 
-// Auth endpoints (prevent brute force)
-export const authLimiter = rateLimit({
-  windowMs: 5 * 60_000, // 5 min
+// Staff login limiter: 10 attempts / 10 min per (IP + orgId)
+export const staffLoginLimiter = rateLimit({
+  windowMs: 10 * 60_000, // 10 min
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  handler,
+  handler: rateLimitHandler,
+  keyGenerator: (req) => `${req.ip}_${req.body?.orgId || ''}`,
+  validate: { keyGeneratorIpFallback: false },
+  skip: (req) => env.NODE_ENV === 'test' && !req.headers['x-test-rate-limit'],
 });
+
+// Admin login limiter: 5 attempts / 10 min per IP
+export const adminLoginLimiter = rateLimit({
+  windowMs: 10 * 60_000, // 10 min
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skip: (req) => env.NODE_ENV === 'test' && !req.headers['x-test-rate-limit'],
+});
+
+// Travel estimation limiter: 30 attempts / 1 min per IP (§5.5)
+export const travelLimiter = rateLimit({
+  windowMs: 60_000, // 1 min
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: (req) => {
+    const deviceId = req.headers['x-device-id'] || '';
+    return `${req.ip}_${deviceId}`;
+  },
+  validate: { keyGeneratorIpFallback: false },
+  skip: (req) => env.NODE_ENV === 'test' && !req.headers['x-test-rate-limit'],
+});
+
+export const authLimiter = staffLoginLimiter;
+export default apiLimiter;

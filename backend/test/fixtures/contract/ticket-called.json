@@ -1,0 +1,32 @@
+{
+  "token": "xK8mP2vL9qR5tY1wZ4aB7c",
+  "id": "670c5b3e2a1b3c4d5e6f7a8b",
+  "label": "G-015",
+  "name": "Ananya Sharma",
+  "status": "called",
+  "position": 0,
+  "priority": "none",
+  "source": "remote",
+  "arrived": true,
+  "arrivedAt": 1728840200000,
+  "calledAt": 1728840250000,
+  "counterId": "c1",
+  "calledCounterName": "Desk 1",
+  "calledCounter": { "id": "c1", "name": "Desk 1" },
+  "firstEta": { "low": 12, "mid": 16, "high": 22, "startMs": 1728841000000 },
+  "lastEta": { "low": 0, "mid": 0, "high": 0, "startMs": 1728840250000 },
+  "changes": [
+    { "minutes": 0, "text": "Called to Desk 1", "time": 1728840250000 }
+  ],
+  "org": {
+    "id": "harbour",
+    "name": "Harbour Care Clinic",
+    "lat": 13.0338,
+    "lng": 80.2676
+  },
+  "dept": {
+    "id": "gen",
+    "name": "General OPD"
+  },
+  "serverNow": 1728840260000
+}

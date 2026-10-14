@@ -1,0 +1,7 @@
+{
+  "status": 403,
+  "code": "COOLDOWN",
+  "message": "Remote joining paused (24h cooldown due to repeated no-shows). Walk-ins still accepted.",
+  "retryAfterMs": 43200000,
+  "requestId": "r-8f3b"
+}

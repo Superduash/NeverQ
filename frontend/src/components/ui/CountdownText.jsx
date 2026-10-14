@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { clock } from '../../lib/clock.js';
 
 export function CountdownText({ targetTimestamp, onZero, labelPrefix = '', className = '' }) {
-  const [timeLeft, setTimeLeft] = useState(() => Math.max(0, Math.floor((targetTimestamp - Date.now()) / 1000)));
+  const [timeLeft, setTimeLeft] = useState(() => Math.max(0, Math.floor((targetTimestamp - clock.now()) / 1000)));
 
   useEffect(() => {
     const timer = setInterval(() => {
-      const remaining = Math.max(0, Math.floor((targetTimestamp - Date.now()) / 1000));
+      const remaining = Math.max(0, Math.floor((targetTimestamp - clock.now()) / 1000));
       setTimeLeft(remaining);
       if (remaining === 0) {
         clearInterval(timer);

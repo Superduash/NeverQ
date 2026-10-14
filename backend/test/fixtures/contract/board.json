@@ -1,0 +1,23 @@
+{
+  "org": {
+    "id": "harbour",
+    "name": "Harbour Care Clinic"
+  },
+  "departments": [
+    {
+      "id": "gen",
+      "name": "General OPD",
+      "counters": [
+        { "id": "c1", "name": "Desk 1", "state": "open" },
+        { "id": "c2", "name": "Desk 2", "state": "open" }
+      ],
+      "serving": [
+        { "token": "xK8mP2vL9qR5tY1wZ4aB7c", "label": "G-015", "counterName": "Desk 1", "deptName": "General OPD" }
+      ],
+      "waiting": [
+        { "token": "wL9qR5tY1wZ4aB7cxK8mP2", "label": "G-016", "deptName": "General OPD" }
+      ]
+    }
+  ],
+  "updatedAt": 1728840350000
+}

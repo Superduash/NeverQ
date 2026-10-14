@@ -14,9 +14,10 @@ export function validate(schema) {
       req.body = schema.parse(req.body);
       next();
     } catch (err) {
-      if (err instanceof ZodError) {
-        const fields = err.errors.map((e) => ({
-          field: e.path.join('.'),
+      if (err instanceof ZodError || err?.name === 'ZodError') {
+        const issues = err.issues || err.errors || [];
+        const fields = issues.map((e) => ({
+          field: Array.isArray(e.path) ? e.path.join('.') : String(e.path || ''),
           message: e.message,
         }));
         return res.status(400).json({

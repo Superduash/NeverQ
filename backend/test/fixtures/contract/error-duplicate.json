@@ -1,0 +1,8 @@
+{
+  "status": 409,
+  "code": "DUPLICATE_TICKET",
+  "message": "Active ticket already exists",
+  "token": "xK8mP2vL9qR5tY1wZ4aB7c",
+  "retryAfterMs": null,
+  "requestId": "r-8f3a"
+}

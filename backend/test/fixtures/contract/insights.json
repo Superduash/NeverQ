@@ -1,0 +1,23 @@
+{
+  "deptId": "gen",
+  "deptName": "General OPD",
+  "defaultMin": 12,
+  "stats": {
+    "n": 14,
+    "mean": 13.2,
+    "sd": 2.8
+  },
+  "expectedMin": 13.0,
+  "confidenceLevel": "high",
+  "confidence": "Higher — based on 14 recent consultations",
+  "history": [12.0, 12.5, 13.0, 12.8, 13.2],
+  "rows": [
+    {
+      "label": "G-010",
+      "predictedMin": 14,
+      "actualMin": 13,
+      "simulated": false
+    }
+  ],
+  "coverage": 82.5
+}

@@ -1,29 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Clock } from 'lucide-react';
+import { useClockOffset, clock } from '../../lib/clock.js';
+import { api } from '../../lib/api.js';
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
-
-// F-07: DemoClockBanner is only meaningful in mock mode.
-// In real mode it would read a stale in-memory mockEngine, so we guard it.
 export function DemoClockBanner() {
-  const [offsetMinutes, setOffsetMinutes] = useState(0);
+  const offsetMs = useClockOffset();
+  const offsetMinutes = Math.round(offsetMs / 60000);
+  const hasAdminToken = Boolean(localStorage.getItem('nq-admin-token'));
 
-  useEffect(() => {
-    if (!USE_MOCK) return; // F-07: skip entirely in real mode
+  if (offsetMinutes === 0) return null;
 
-    // Lazy import mockEngine only in mock mode to avoid bundling it in prod
-    import('../../lib/mock/engine.js').then(({ mockEngine }) => {
-      const read = () =>
-        Math.round((mockEngine.db?.settings?.clockOffsetMs || 0) / 60000);
-
-      setOffsetMinutes(read());
-
-      const timer = setInterval(() => setOffsetMinutes(read()), 2000);
-      return () => clearInterval(timer);
-    });
-  }, []);
-
-  if (!USE_MOCK || offsetMinutes === 0) return null;
+  const handleReset = async () => {
+    try {
+      await api.demoSetClock({ offsetMinutes: 0 });
+      clock.setOffset(0);
+    } catch {
+      clock.setOffset(0);
+    }
+  };
 
   return (
     <div
@@ -34,18 +28,15 @@ export function DemoClockBanner() {
         <Clock size={14} className="shrink-0 animate-spin" />
         <span>Demo clock fast-forwarded +{offsetMinutes} min</span>
       </div>
-      <button
-        type="button"
-        onClick={async () => {
-          const { mockEngine } = await import('../../lib/mock/engine.js');
-          mockEngine.db.settings.clockOffsetMs = 0;
-          mockEngine.save();
-          setOffsetMinutes(0);
-        }}
-        className="px-2 py-0.5 rounded bg-black/15 hover:bg-black/25 text-black font-semibold text-[10px]"
-      >
-        Reset Clock
-      </button>
+      {hasAdminToken && (
+        <button
+          type="button"
+          onClick={handleReset}
+          className="px-2 py-0.5 rounded bg-black/15 hover:bg-black/25 text-black font-semibold text-[10px]"
+        >
+          Reset Clock
+        </button>
+      )}
     </div>
   );
 }

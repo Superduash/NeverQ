@@ -1,0 +1,8 @@
+{
+  "totalHospitals": 3,
+  "totalCounters": 17,
+  "activeTickets": 24,
+  "servedToday": 142,
+  "rushFactor": 1.0,
+  "clockOffsetMinutes": 0
+}

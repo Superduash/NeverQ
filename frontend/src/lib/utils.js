@@ -1,25 +1,37 @@
 import { useEffect, useState, useCallback } from 'react';
 import { notify } from './notify.js';
-
+import { clock } from './clock.js';
 import { WAIT_THRESHOLDS } from './constants.js';
 export { WAIT_THRESHOLDS };
 
 export function waitColor(midMinutes) {
+  if (midMinutes === 0) return 'good';
   if (midMinutes < WAIT_THRESHOLDS.good) return 'good';
   if (midMinutes <= WAIT_THRESHOLDS.bad) return 'mid';
   return 'bad';
 }
 
 export function formatEta(eta) {
-  if (!eta) return '—';
-  if (typeof eta === 'number') return `~${Math.round(eta)}m`;
-  if (eta.low && eta.high) return `${eta.low}–${eta.high}m`;
-  if (eta.mid) return `~${eta.mid}m`;
+  if (eta == null) return '—';
+  if (typeof eta === 'number') {
+    if (eta === 0) return 'No wait';
+    return `~${Math.round(eta)}m`;
+  }
+  if (eta.noCounter) return 'No counter open';
+  if (eta.low != null && eta.high != null) {
+    if (eta.low === 0 && eta.high === 0) return 'No wait';
+    return `${eta.low}–${eta.high}m`;
+  }
+  if (eta.mid != null) {
+    if (eta.mid === 0) return 'No wait';
+    return `~${eta.mid}m`;
+  }
   return '—';
 }
 
 export function formatRange(low, high) {
   if (low == null || high == null) return '—';
+  if (low === 0 && high === 0) return 'No wait';
   if (low === high) return `${low}m`;
   return `${low}–${high}m`;
 }
@@ -33,14 +45,47 @@ export function formatDuration(minutes) {
   return rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
 }
 
-export function leaveBy(etaMid, travelMinutes, bufferMinutes = 5) {
-  if (etaMid == null || travelMinutes == null) return null;
-  const leaveMinutes = Math.max(0, etaMid - travelMinutes - bufferMinutes);
-  const targetDate = new Date(Date.now() + leaveMinutes * 60 * 1000);
+/**
+ * Demo-clock aware Leave-by calculation (§0.7)
+ * Accepts either:
+ *   leaveBy({ startMs, travelMin, bufferMin = 5, nowMs })
+ * or legacy:
+ *   leaveBy(etaMid, travelMinutes, bufferMinutes = 5)
+ */
+export function leaveBy(arg1, arg2, arg3 = 5) {
+  let startMs;
+  let travelMin;
+  let bufferMin = 5;
+  let nowMs = clock.now();
+
+  if (typeof arg1 === 'object' && arg1 !== null) {
+    travelMin = arg1.travelMin ?? arg1.travelMinutes;
+    bufferMin = arg1.bufferMin ?? 5;
+    nowMs = arg1.nowMs ?? clock.now();
+    startMs = arg1.startMs;
+    if (startMs == null && arg1.etaMid != null) {
+      startMs = nowMs + arg1.etaMid * 60000;
+    }
+  } else {
+    const etaMid = arg1;
+    travelMin = arg2;
+    bufferMin = arg3 ?? 5;
+    if (etaMid == null || travelMin == null) return null;
+    startMs = nowMs + etaMid * 60000;
+  }
+
+  if (startMs == null || travelMin == null) return null;
+
+  const leaveByMs = startMs - (travelMin * 60000) - (bufferMin * 60000);
+  const leaveMinutes = Math.max(0, Math.round((leaveByMs - nowMs) / 60000));
+  const isNow = leaveByMs <= nowMs;
+  const targetDate = new Date(leaveByMs);
+
   return {
+    leaveByMs,
     leaveMinutes,
     leaveTime: targetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    isNow: leaveMinutes <= 0,
+    isNow,
   };
 }
 
@@ -70,13 +115,7 @@ export async function copyToClipboard(text, successMsg = 'Copied to clipboard') 
   }
 }
 
-export async function shareLink(data) {
-  const shareData = {
-    title: data.title || 'NeverQ Live Queue Ticket',
-    text: data.text || 'Track your live hospital queue position with NeverQ',
-    url: data.url || window.location.href,
-  };
-
+export async function shareLink(shareData) {
   if (navigator.share) {
     try {
       await navigator.share(shareData);
@@ -96,16 +135,16 @@ export async function shareLink(data) {
 
 // Live tick hook aware of demo-clock offset
 export function useNow(intervalMs = 1000) {
-  const [now, setNow] = useState(() => Date.now());
+  const [currentNow, setCurrentNow] = useState(() => clock.now());
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setNow(Date.now());
+      setCurrentNow(clock.now());
     }, intervalMs);
     return () => clearInterval(timer);
   }, [intervalMs]);
 
-  return now;
+  return currentNow;
 }
 
 // Online / offline detector

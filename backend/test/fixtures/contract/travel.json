@@ -1,0 +1,13 @@
+{
+  "minutes": 15,
+  "km": 3.7,
+  "source": "estimate",
+  "label": "approx.",
+  "mode": "car",
+  "rushFactor": 1.0,
+  "trafficFactor": null,
+  "cached": false,
+  "fallbackReason": null,
+  "computedAt": 1728840000000,
+  "geometry": null
+}

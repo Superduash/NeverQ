@@ -66,9 +66,17 @@ venv/
 .venv/
 env/
 
+# Scratch, agent artifacts & prompt files
+scratch/
+Files/
+.agents/
+.system_generated/
+coverage/
+
 # Binary docs & prompt blueprints
 *.pdf
 FrontendQ.md
+BackendQ.md
 *.md
 !README.md
 !BackendIntegrationRef.md

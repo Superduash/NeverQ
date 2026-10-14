@@ -1,34 +1,55 @@
 // backend/src/routes/admin.js
-// Admin-authenticated endpoints (Phase 8 + Phase 9)
+// Admin-authenticated endpoints (Phase 3 + Phase 8 + Phase 9)
 // All non-login routes require requireAdmin middleware (JWT)
 
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAdmin } from '../middleware/auth.js';
-import { authLimiter } from '../middleware/rateLimit.js';
+import bcrypt from 'bcryptjs';
+import env from '../config/env.js';
+import { requireAdmin, signAdminToken } from '../middleware/auth.js';
+import { adminLoginLimiter } from '../middleware/rateLimit.js';
 import { validate } from '../middleware/validate.js';
-import { signAdminToken } from '../middleware/auth.js';
+import { Org } from '../db/models/index.js';
+import { AppError } from '../lib/errors.js';
 
 const router = Router();
 
 // ───────────── Auth ─────────────
 
 // POST /api/admin/login
-router.post('/login', authLimiter, validate(z.object({
-  password: z.string().min(1),
-})), async (req, res, next) => {
-  try {
-    const { password } = req.body;
-    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin1234';
-    if (password !== ADMIN_PASSWORD) {
-      return res.status(401).json({ status: 401, code: 'INVALID_PASSWORD', message: 'Incorrect admin password.' });
+router.post(
+  '/login',
+  adminLoginLimiter,
+  validate(
+    z.object({
+      password: z.string().min(1),
+    })
+  ),
+  async (req, res, next) => {
+    try {
+      const { password } = req.body;
+      const adminPass = env.ADMIN_PASSWORD || 'admin1234';
+
+      const passHash = crypto.createHash('sha256').update(password).digest();
+      const expectedHash = crypto.createHash('sha256').update(adminPass).digest();
+      const isValid = crypto.timingSafeEqual(passHash, expectedHash);
+
+      if (!isValid) {
+        return res.status(401).json({
+          status: 401,
+          code: 'INVALID_PASSWORD',
+          message: 'Incorrect admin password.',
+        });
+      }
+
+      const token = await signAdminToken();
+      res.json({ token, admin: { role: 'admin' } });
+    } catch (err) {
+      next(err);
     }
-    const token = signAdminToken();
-    res.json({ token, role: 'admin' });
-  } catch (err) {
-    next(err);
   }
-});
+);
 
 // ───────────── Platform Summary ─────────────
 
@@ -57,8 +78,8 @@ const orgBodySchema = z.object({
 // GET /api/admin/orgs
 router.get('/orgs', requireAdmin, async (req, res, next) => {
   try {
-    // TODO Phase 8
-    res.json([]);
+    const orgs = await Org.find().lean();
+    res.json(orgs);
   } catch (err) {
     next(err);
   }
@@ -77,8 +98,29 @@ router.post('/orgs', requireAdmin, validate(orgBodySchema), async (req, res, nex
 // PATCH /api/admin/orgs/:id
 router.patch('/orgs/:id', requireAdmin, validate(orgBodySchema.partial()), async (req, res, next) => {
   try {
-    // TODO Phase 8
-    res.status(501).json({ status: 501, code: 'NOT_IMPLEMENTED', message: 'Phase 8 pending' });
+    const { id } = req.params;
+    const org = await Org.findById(id);
+    if (!org) {
+      return res.status(404).json({ status: 404, code: 'NOT_FOUND', message: 'Hospital not found.' });
+    }
+
+    const updateData = { ...req.body };
+
+    // If staff PIN is changing, rehash and increment pinVersion (§3.3: changing a PIN logs staff out)
+    if (updateData.staffPin) {
+      org.staffPinHash = await bcrypt.hash(updateData.staffPin, 10);
+      org.pinVersion = (org.pinVersion || 1) + 1;
+      delete updateData.staffPin;
+    }
+
+    if (updateData.name !== undefined) org.name = updateData.name;
+    if (updateData.lat !== undefined) org.lat = updateData.lat;
+    if (updateData.lng !== undefined) org.lng = updateData.lng;
+    if (updateData.area !== undefined) org.area = updateData.area;
+    if (updateData.address !== undefined) org.address = updateData.address;
+
+    await org.save();
+    res.json(org);
   } catch (err) {
     next(err);
   }
@@ -87,8 +129,13 @@ router.patch('/orgs/:id', requireAdmin, validate(orgBodySchema.partial()), async
 // POST /api/admin/orgs/:id/toggle
 router.post('/orgs/:id/toggle', requireAdmin, async (req, res, next) => {
   try {
-    // TODO Phase 8
-    res.status(501).json({ status: 501, code: 'NOT_IMPLEMENTED', message: 'Phase 8 pending' });
+    const org = await Org.findById(req.params.id);
+    if (!org) {
+      return res.status(404).json({ status: 404, code: 'NOT_FOUND', message: 'Hospital not found.' });
+    }
+    org.open = !org.open;
+    await org.save();
+    res.json(org);
   } catch (err) {
     next(err);
   }
@@ -98,7 +145,7 @@ router.post('/orgs/:id/toggle', requireAdmin, async (req, res, next) => {
 
 // Only available when DEMO_MODE=true
 function demoOnly(req, res, next) {
-  if (process.env.DEMO_MODE !== 'true') {
+  if (env.DEMO_MODE !== true && process.env.DEMO_MODE !== 'true') {
     return res.status(403).json({
       status: 403,
       code: 'FORBIDDEN',
@@ -111,7 +158,7 @@ function demoOnly(req, res, next) {
 // POST /api/admin/demo/reset
 router.post('/demo/reset', requireAdmin, demoOnly, async (req, res, next) => {
   try {
-    // TODO Phase 9: delete all tickets, reset dept.seq, reset clock
+    // TODO Phase 9: resetToSeed()
     res.status(501).json({ status: 501, code: 'NOT_IMPLEMENTED', message: 'Phase 9 pending' });
   } catch (err) {
     next(err);
@@ -119,41 +166,65 @@ router.post('/demo/reset', requireAdmin, demoOnly, async (req, res, next) => {
 });
 
 // POST /api/admin/demo/fast-forward
-router.post('/demo/fast-forward', requireAdmin, demoOnly, validate(z.object({
-  minutes: z.number().int().min(1).max(180),
-})), async (req, res, next) => {
-  try {
-    // TODO Phase 9
-    res.status(501).json({ status: 501, code: 'NOT_IMPLEMENTED', message: 'Phase 9 pending' });
-  } catch (err) {
-    next(err);
+router.post(
+  '/demo/fast-forward',
+  requireAdmin,
+  demoOnly,
+  validate(
+    z.object({
+      minutes: z.number().int().min(1).max(180),
+    })
+  ),
+  async (req, res, next) => {
+    try {
+      // TODO Phase 9
+      res.status(501).json({ status: 501, code: 'NOT_IMPLEMENTED', message: 'Phase 9 pending' });
+    } catch (err) {
+      next(err);
+    }
   }
-});
+);
 
 // POST /api/admin/demo/rush-hour
-router.post('/demo/rush-hour', requireAdmin, demoOnly, validate(z.object({
-  factor: z.number().min(0.5).max(3.0),
-})), async (req, res, next) => {
-  try {
-    // TODO Phase 9
-    res.status(501).json({ status: 501, code: 'NOT_IMPLEMENTED', message: 'Phase 9 pending' });
-  } catch (err) {
-    next(err);
+router.post(
+  '/demo/rush-hour',
+  requireAdmin,
+  demoOnly,
+  validate(
+    z.object({
+      factor: z.number().min(0.5).max(3.0),
+    })
+  ),
+  async (req, res, next) => {
+    try {
+      // TODO Phase 9
+      res.status(501).json({ status: 501, code: 'NOT_IMPLEMENTED', message: 'Phase 9 pending' });
+    } catch (err) {
+      next(err);
+    }
   }
-});
+);
 
 // POST /api/admin/demo/simulate-patients
-router.post('/demo/simulate-patients', requireAdmin, demoOnly, validate(z.object({
-  orgId: z.string().min(1),
-  deptId: z.string().min(1),
-  count: z.number().int().min(1).max(50),
-})), async (req, res, next) => {
-  try {
-    // TODO Phase 9
-    res.status(501).json({ status: 501, code: 'NOT_IMPLEMENTED', message: 'Phase 9 pending' });
-  } catch (err) {
-    next(err);
+router.post(
+  '/demo/simulate-patients',
+  requireAdmin,
+  demoOnly,
+  validate(
+    z.object({
+      orgId: z.string().min(1),
+      deptId: z.string().min(1),
+      count: z.number().int().min(1).max(50),
+    })
+  ),
+  async (req, res, next) => {
+    try {
+      // TODO Phase 9
+      res.status(501).json({ status: 501, code: 'NOT_IMPLEMENTED', message: 'Phase 9 pending' });
+    } catch (err) {
+      next(err);
+    }
   }
-});
+);
 
 export default router;

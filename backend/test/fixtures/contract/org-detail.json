@@ -1,0 +1,35 @@
+{
+  "id": "harbour",
+  "name": "Harbour Care Clinic",
+  "lat": 13.0338,
+  "lng": 80.2676,
+  "area": "Mylapore",
+  "address": "42 Marina Beach Rd, Mylapore, Chennai",
+  "hours": "8:00 AM – 8:00 PM",
+  "open": true,
+  "demo": true,
+  "rules": {
+    "remoteEnabled": true,
+    "remoteCap": 10,
+    "arriveByMin": 15,
+    "graceMin": 5,
+    "priorityCreditMin": {
+      "senior": 20,
+      "pregnant": 20,
+      "disabled": 20,
+      "none": 0
+    }
+  },
+  "departments": [
+    {
+      "id": "gen",
+      "name": "General OPD",
+      "code": "G",
+      "defaultMin": 12,
+      "countersOpen": 2,
+      "countersTotal": 3,
+      "eta": { "low": 10, "mid": 14, "high": 20, "noCounter": false },
+      "confidence": "Medium — based on 5 recent consultations"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "token": "xK8mP2vL9qR5tY1wZ4aB7c",
+  "id": "670c5b3e2a1b3c4d5e6f7a8b",
+  "label": "G-015",
+  "name": "Ananya Sharma",
+  "status": "serving",
+  "position": 0,
+  "startedAt": 1728840300000,
+  "counterId": "c1",
+  "calledCounterName": "Desk 1",
+  "org": {
+    "id": "harbour",
+    "name": "Harbour Care Clinic"
+  },
+  "dept": {
+    "id": "gen",
+    "name": "General OPD"
+  },
+  "serverNow": 1728840350000
+}

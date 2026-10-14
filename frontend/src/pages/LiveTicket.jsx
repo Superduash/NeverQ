@@ -16,6 +16,7 @@ import { NOTIFICATION_MESSAGES } from '../lib/messages.js';
 import {
   leaveBy, shareLink, formatDuration, formatRange, useOnline
 } from '../lib/utils.js';
+import { clock } from '../lib/clock.js';
 import {
   Button, IconButton, Badge, Segmented, ConfirmDialog,
   Banner, Skeleton, ErrorState, RelativeTime, CountdownText
@@ -48,8 +49,12 @@ export default function LiveTicket() {
   const [cancelling, setCancelling] = useState(false);
   const [arriving, setArriving] = useState(false);
   const [arriveError, setArriveError] = useState(null);
-  // F-01: travelMode was used but never declared — bloccker fix
-  const [travelMode, setTravelMode] = useState('car'); // 'walk' | 'bike' | 'car'
+  // F-01: travelMode state persisted with storage
+  const [travelMode, setTravelModeState] = useState(() => storage.getTravelMode?.() || 'car');
+  const setTravelMode = useCallback((mode) => {
+    setTravelModeState(mode);
+    storage.setTravelMode?.(mode);
+  }, []);
 
   // Alerts unlock state
   const [alertsUnlocked, setAlertsUnlockedState] = useState(() => isAlertsUnlocked());
@@ -140,8 +145,8 @@ export default function LiveTicket() {
 
   // Handle ticket:called event from socket
   useSocketRoom(token ? `ticket:${token}` : null, 'ticket:called', (payload) => {
-    refresh();
-    const counterName = payload?.counter?.name || ticket?.counterName || 'Consultation Counter 1';
+    // F-21: counter name from payload/ticket; never invent 'Consultation Counter 1'
+    const counterName = payload?.counter?.name || payload?.calledCounterName || ticket?.calledCounterName || ticket?.counter?.name || 'your assigned desk';
     triggerCallAlert({
       tokenLabel: ticket?.label || payload?.ticket?.label || 'Your Ticket',
       counterName,
@@ -153,8 +158,8 @@ export default function LiveTicket() {
   // Trigger call alert on status transition to 'called' if not already fired
   useEffect(() => {
     if (isCalled && ticket && !hasTriggeredCallRef.current) {
-      hasTriggeredCallRef.current = true;
-      const counterName = ticket.calledCounterName || ticket.counter?.name || 'Consultation Counter 1';
+      // F-21: counter name from ticket; never invent 'Consultation Counter 1'
+      const counterName = ticket.calledCounterName || ticket.counter?.name || 'your assigned desk';
       triggerCallAlert({
         tokenLabel: ticket.label,
         counterName,
@@ -569,7 +574,7 @@ export default function LiveTicket() {
               onChange={setTravelMode}
               options={[
                 { value: 'walk', label: 'Walk', icon: <Footprints size={13} /> },
-                { value: 'bike', label: 'Bike', icon: <Bike size={13} /> },
+                { value: 'bike', label: 'Cycle', icon: <Bike size={13} /> },
                 { value: 'car', label: 'Car', icon: <Car size={13} /> },
               ]}
             />
@@ -702,23 +707,23 @@ export default function LiveTicket() {
 function CalledTakeoverPanel({ ticket, shouldReduceMotion }) {
   const [secondsRemaining, setSecondsRemaining] = useState(() => {
     const graceMs = 5 * 60 * 1000;
-    const calledAt = ticket.calledAt || Date.now();
-    return Math.max(0, Math.floor((calledAt + graceMs - Date.now()) / 1000));
+    const calledAt = ticket.calledAt || clock.now();
+    return Math.max(0, Math.floor((calledAt + graceMs - clock.now()) / 1000));
   });
 
   useEffect(() => {
     const timer = setInterval(() => {
       const graceMs = 5 * 60 * 1000;
-      const calledAt = ticket.calledAt || Date.now();
-      const remaining = Math.max(0, Math.floor((calledAt + graceMs - Date.now()) / 1000));
+      const calledAt = ticket.calledAt || clock.now();
+      const remaining = Math.max(0, Math.floor((calledAt + graceMs - clock.now()) / 1000));
       setSecondsRemaining(remaining);
     }, 1000);
     return () => clearInterval(timer);
   }, [ticket.calledAt]);
 
   const mins = Math.floor(secondsRemaining / 60);
-  const secs = String(secondsRemaining % 60).padStart(2, '0');
-  const counterName = ticket.calledCounterName || ticket.counter?.name || 'Counter 1';
+  // F-21: counter name from ticket, never invent 'Counter 1'
+  const counterName = ticket.calledCounterName || ticket.counter?.name || 'your assigned counter';
 
   return (
     <motion.div
@@ -769,14 +774,14 @@ function CalledTakeoverPanel({ ticket, shouldReduceMotion }) {
 // ───────────── Phase 5.4: Serving State Component ─────────────
 function ServingStatePanel({ ticket }) {
   const [elapsedMin, setElapsedMin] = useState(() => {
-    const started = ticket.startedAt || Date.now();
-    return Math.max(0, Math.floor((Date.now() - started) / 60000));
+    const started = ticket.startedAt || clock.now();
+    return Math.max(0, Math.floor((clock.now() - started) / 60000));
   });
 
   useEffect(() => {
     const timer = setInterval(() => {
-      const started = ticket.startedAt || Date.now();
-      setElapsedMin(Math.max(0, Math.floor((Date.now() - started) / 60000)));
+      const started = ticket.startedAt || clock.now();
+      setElapsedMin(Math.max(0, Math.floor((clock.now() - started) / 60000)));
     }, 30000);
     return () => clearInterval(timer);
   }, [ticket.startedAt]);

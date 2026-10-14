@@ -33,9 +33,12 @@ export default function AdminDashboard() {
   // Demo Director states
   const [resetting, setResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [directorOrgId, setDirectorOrgId] = useState('');
+  const [directorDeptId, setDirectorDeptId] = useState('');
   const [simDept, setSimDept] = useState('gen');
   const [simCount, setSimCount] = useState(6);
   const [customFfMins, setCustomFfMins] = useState(15);
+  const [customClockOffset, setCustomClockOffset] = useState(0);
   const [currentRush, setCurrentRush] = useState(1);
   const [activityLogs, setActivityLogs] = useState([]);
 
@@ -93,21 +96,26 @@ export default function AdminDashboard() {
     }
   };
 
+  // Active director org and dept derived dynamically
+  const activeDirectorOrg = useMemo(() => {
+    return hospitals.find((h) => h.id === directorOrgId) || hospitals.at(0) || null;
+  }, [hospitals, directorOrgId]);
+
+  const activeDirectorDept = useMemo(() => {
+    return activeDirectorOrg?.departments?.find((d) => d.id === directorDeptId) || activeDirectorOrg?.departments?.[0] || null;
+  }, [activeDirectorOrg, directorDeptId]);
+
   const handleSimulate = async () => {
     try {
-      // F-12: use first loaded hospital id, not hard-coded 'harbour'
-      const targetOrg = hospitals[0];
-      if (!targetOrg) { notify.error('No hospitals loaded yet'); return; }
-      // F-12: verify the selected dept exists in that org
-      const deptExists = targetOrg.departments?.some((d) => d.id === simDept);
-      const resolvedDept = deptExists ? simDept : targetOrg.departments?.[0]?.id || 'gen';
+      if (!activeDirectorOrg) { notify.error('No hospitals loaded yet'); return; }
+      const deptId = activeDirectorDept?.id || 'gen';
       await api.simulatePatients({
-        orgId: targetOrg.id,
-        deptId: resolvedDept,
+        orgId: activeDirectorOrg.id,
+        deptId,
         count: simCount,
       });
       notify.success(`Simulated ${simCount} patients in department`);
-      logAction('Simulate Patients', `Added ${simCount} simulated tickets with mixed priorities`);
+      logAction('Simulate Patients', `Added ${simCount} simulated tickets in ${activeDirectorOrg.name}`);
       loadAllData();
     } catch (err) {
       notify.error(err);
@@ -125,6 +133,17 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleSetClock = async (offsetMinutes) => {
+    try {
+      const res = await api.demoSetClock({ offsetMinutes });
+      notify.info(`Demo clock offset set to ${res.offsetMinutes}m`);
+      logAction('Set Clock', `Set clock offset directly to ${res.offsetMinutes} minutes`);
+      loadAllData();
+    } catch (err) {
+      notify.error(err);
+    }
+  };
+
   const handleRushHour = async (factor) => {
     try {
       await api.demoRushHour({ factor });
@@ -136,45 +155,17 @@ export default function AdminDashboard() {
     }
   };
 
-  // Scenario Presets (Phase 9.5)
+  // Scenario Presets (Phase 9.5 & D-4: admin dedicated endpoint)
   const runScenario = async (type) => {
     try {
-      // F-12: derive org and counters from loaded hospitals data
-      const targetOrg = hospitals[0];
-      if (!targetOrg) { notify.error('Load hospitals first'); return; }
-      const genDept = targetOrg.departments?.find((d) => d.id === 'gen' || d.name === 'General OPD');
-      const deptId = genDept?.id || targetOrg.departments?.[0]?.id || 'gen';
-      const counters = genDept?.counters || targetOrg.departments?.[0]?.counters || [];
-      const counter1 = counters[0]?.id;
-      const counter2 = counters[1]?.id;
+      if (!activeDirectorOrg) { notify.error('Load hospitals first'); return; }
+      const orgId = activeDirectorOrg.id;
+      const deptId = activeDirectorDept?.id || 'gen';
+      const scenarioType = type === 'open-c2' ? 'open-counter' : type;
 
-      if (type === 'delay') {
-        if (!counter1) { notify.error('No counter found for delay scenario'); return; }
-        // F-13: use role:'admin' for these calls
-        await api.setCounterDelay(counter1, { minutes: 15, reason: 'Emergency phone consult' }, { role: 'admin' });
-        notify.success(`Scenario executed: Doctor delayed 15m on ${counters[0]?.name || counter1}`);
-        logAction('Scenario: Delay', `Set ${counters[0]?.name || 'Desk 1'} delay to 15m`);
-      } else if (type === 'open-c2') {
-        if (!counter2) { notify.error('No second counter found'); return; }
-        await api.setCounterState(counter2, { state: 'open' }, { role: 'admin' });
-        notify.success(`Scenario executed: Opened ${counters[1]?.name || 'Counter 2'}`);
-        logAction('Scenario: Open Counter', `${counters[1]?.name || 'Room 2'} opened`);
-      } else if (type === 'urgent') {
-        await api.insertUrgent({ deptId, name: 'Triage Patient', reason: 'Critical breathlessness' }, { role: 'admin' });
-        notify.success('Scenario executed: Urgent case inserted');
-        logAction('Scenario: Urgent Case', `Inserted patient at front of ${genDept?.name || 'General OPD'}`);
-      } else if (type === 'no-show') {
-        await api.createTicket({
-          orgId: targetOrg.id,
-          deptId,
-          name: 'Remote Patient (No-show demo)',
-          phone: '+919888800000',
-          priority: 'none',
-        });
-        await api.demoFastForward({ minutes: 25 });
-        notify.warning('Scenario executed: Created remote ticket & fast-forwarded past deadline');
-        logAction('Scenario: No-show', 'Created remote ticket and advanced past deadline to trigger requeue');
-      }
+      await api.demoScenario({ type: scenarioType, orgId, deptId });
+      notify.success(`Scenario executed: ${type}`);
+      logAction(`Scenario: ${type}`, `Triggered ${type} on ${activeDirectorOrg.name}`);
       loadAllData();
     } catch (err) {
       notify.error(err);
@@ -246,7 +237,7 @@ export default function AdminDashboard() {
                 <span className="text-[10px] uppercase font-bold text-[var(--ink-faint)]">Consultation Desks</span>
                 <span className="font-heading font-black text-2xl text-[var(--brand)] mt-1 tnum">
                   {/* F-25: show real count, never invent 6 */}
-                  {summary?.totalCounters ?? hospitals.reduce((acc, h) => acc + (h.departments?.reduce((da, d) => da + (d.counters?.length || 0), 0) || 0), 0) || 0}
+                  {summary?.totalCounters ?? (hospitals.reduce((acc, h) => acc + (h.departments?.reduce((da, d) => da + (d.counters?.length || 0), 0) || 0), 0))}
                 </span>
                 <span className="text-[11px] text-[var(--ink-faint)] mt-0.5">Counters online</span>
               </div>
@@ -346,7 +337,7 @@ export default function AdminDashboard() {
                       <div className="grid grid-cols-2 gap-2 mt-3 p-3 rounded-xl bg-[var(--surface-2)] text-xs">
                         <div>
                           <span className="text-[10px] font-bold uppercase text-[var(--ink-faint)] block">Departments</span>
-                          <span className="font-bold text-[var(--ink)] tnum">{hospital.departments?.length || 1} units</span>
+                          <span className="font-bold text-[var(--ink)] tnum">{hospital.departments?.length || 0} units</span>
                         </div>
                         <div>
                           <span className="text-[10px] font-bold uppercase text-[var(--ink-faint)] block">Total Desks</span>
@@ -391,7 +382,7 @@ export default function AdminDashboard() {
           <div className="flex flex-col gap-6">
             {/* Top Toolbar: Reset, Fast Forward, Rush Hour */}
             <div className="p-5 sm:p-6 rounded-3xl bg-[var(--surface)] border border-[var(--border)] shadow-xs flex flex-col gap-5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <Sliders size={18} className="text-[var(--brand)]" />
                   <h3 className="font-heading font-extrabold text-sm uppercase tracking-wider text-[var(--ink)]">
@@ -399,19 +390,56 @@ export default function AdminDashboard() {
                   </h3>
                 </div>
 
-                {/* 9.1 Reset Button */}
-                <Button
-                  size="sm"
-                  variant="danger"
-                  iconLeft={<RotateCcw size={14} />}
-                  onClick={() => setShowResetConfirm(true)}
-                  loading={resetting}
-                >
-                  Reset Demo DB
-                </Button>
+                {/* Org & Dept Selectors */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-[var(--ink-faint)]">Facility:</span>
+                    <select
+                      value={directorOrgId || activeDirectorOrg?.id || ''}
+                      onChange={(e) => {
+                        setDirectorOrgId(e.target.value);
+                        const org = hospitals.find((h) => h.id === e.target.value);
+                        if (org?.departments?.[0]) setDirectorDeptId(org.departments[0].id);
+                      }}
+                      className="h-8 px-2.5 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold text-[var(--ink)] cursor-pointer"
+                    >
+                      {hospitals.map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {h.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-[var(--ink-faint)]">Dept:</span>
+                    <select
+                      value={directorDeptId || activeDirectorDept?.id || ''}
+                      onChange={(e) => setDirectorDeptId(e.target.value)}
+                      className="h-8 px-2.5 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold text-[var(--ink)] cursor-pointer"
+                    >
+                      {(activeDirectorOrg?.departments || []).map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 9.1 Reset Button */}
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    iconLeft={<RotateCcw size={14} />}
+                    onClick={() => setShowResetConfirm(true)}
+                    loading={resetting}
+                  >
+                    Reset Demo DB
+                  </Button>
+                </div>
               </div>
 
-              {/* 9.3 Fast Forward Clock Controls */}
+              {/* 9.3 Fast Forward Clock Controls & Absolute Set Clock */}
               <div className="flex flex-col gap-2">
                 <span className="text-xs font-bold text-[var(--ink)] flex items-center gap-1.5">
                   <Clock size={14} className="text-[var(--brand)]" />
@@ -443,6 +471,24 @@ export default function AdminDashboard() {
                       onClick={() => handleFastForward(customFfMins)}
                     >
                       Advance
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 pl-2 border-l border-[var(--border)]">
+                    <span className="text-xs text-[var(--ink-faint)]">Set offset:</span>
+                    <input
+                      type="number"
+                      value={customClockOffset}
+                      onChange={(e) => setCustomClockOffset(Number(e.target.value))}
+                      placeholder="0"
+                      className="w-16 h-8 px-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] text-xs text-center font-bold tnum text-[var(--ink)]"
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSetClock(customClockOffset)}
+                    >
+                      Set Clock
                     </Button>
                   </div>
                 </div>
@@ -478,19 +524,9 @@ export default function AdminDashboard() {
               {/* 9.2 Simulate Patients */}
               <div className="flex flex-col gap-2 pt-2 border-t border-[var(--border)]">
                 <span className="text-xs font-bold text-[var(--ink)]">
-                  Simulate Queue Arrivals (SIM Badge)
+                  Simulate Queue Arrivals in {activeDirectorDept?.name || 'Department'} (SIM Badge)
                 </span>
                 <div className="flex flex-wrap items-center gap-2.5">
-                  <select
-                    value={simDept}
-                    onChange={(e) => setSimDept(e.target.value)}
-                    className="h-9 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold text-[var(--ink)] cursor-pointer"
-                  >
-                    <option value="gen">General OPD</option>
-                    <option value="eye">Eye Clinic</option>
-                    <option value="pharm">Pharmacy</option>
-                  </select>
-
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-[var(--ink-faint)]">Count:</span>
                     {[3, 6, 12].map((cnt) => (
@@ -526,7 +562,7 @@ export default function AdminDashboard() {
               <h3 className="font-heading font-extrabold text-sm uppercase tracking-wider text-[var(--ink)]">
                 One-Click Demo Scenarios (NeverQ2 §13)
               </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                 <button
                   type="button"
                   onClick={() => runScenario('delay')}
@@ -561,6 +597,15 @@ export default function AdminDashboard() {
                 >
                   <span className="font-bold text-xs text-[var(--danger)]">No-Show Requeue</span>
                   <span className="text-[11px] text-[var(--ink-faint)]">Passes deadline & requeues</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => runScenario('story-setup')}
+                  className="p-3 rounded-2xl bg-[var(--surface-2)] hover:border-[var(--brand)] border border-transparent text-left flex flex-col gap-1 transition-colors"
+                >
+                  <span className="font-bold text-xs text-[var(--brand)]">Story Setup</span>
+                  <span className="text-[11px] text-[var(--ink-faint)]">Initializes Eye stats</span>
                 </button>
               </div>
             </div>
@@ -755,18 +800,87 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
   const [lng, setLng] = useState(existingOrg?.lng || 80.2450);
   const [area, setArea] = useState(existingOrg?.area || 'Mylapore');
   const [address, setAddress] = useState(existingOrg?.address || '');
-  // F-14: never pre-fill staffPin — the backend must not return it in org responses
+  const [hours, setHours] = useState(existingOrg?.hours || '08:00–20:00');
   const [staffPin, setStaffPin] = useState('');
-  const [defaultMin, setDefaultMin] = useState(existingOrg?.departments?.[0]?.defaultMin || 12);
+
+  // Rules (Appendix A.7)
+  const [arriveByMin, setArriveByMin] = useState(existingOrg?.rules?.arriveByMin ?? 15);
+  const [graceMin, setGraceMin] = useState(existingOrg?.rules?.graceMin ?? 10);
+  const [remoteCap, setRemoteCap] = useState(existingOrg?.rules?.remoteCap ?? 15);
+  const [remoteEnabled, setRemoteEnabled] = useState(existingOrg?.rules?.remoteEnabled !== false);
+  const [seniorCredit, setSeniorCredit] = useState(existingOrg?.rules?.priorityCreditMin?.senior ?? 10);
+  const [pregnantCredit, setPregnantCredit] = useState(existingOrg?.rules?.priorityCreditMin?.pregnant ?? 15);
+  const [disabledCredit, setDisabledCredit] = useState(existingOrg?.rules?.priorityCreditMin?.disabled ?? 20);
+
+  // Departments & Counters (preserves IDs on edit)
+  const [departments, setDepartments] = useState(() => {
+    if (existingOrg?.departments?.length) {
+      return existingOrg.departments.map((d) => ({
+        id: d.id,
+        name: d.name,
+        code: d.code || d.name?.charAt(0).toUpperCase() || 'G',
+        defaultMin: d.defaultMin || 12,
+        counters: (d.counters || []).map((c) => ({
+          id: c.id,
+          name: c.name || 'Desk',
+        })),
+      }));
+    }
+    return [
+      {
+        id: 'gen',
+        name: 'General OPD',
+        code: 'G',
+        defaultMin: 12,
+        counters: [
+          { id: 'ctr-1', name: 'Consultation Desk 1' },
+          { id: 'ctr-2', name: 'Consultation Desk 2' },
+        ],
+      },
+    ];
+  });
+
   const [loading, setLoading] = useState(false);
-  // Track if user explicitly set a PIN when editing
-  const [pinChanged, setPinChanged] = useState(!existingOrg);
 
   const handleUseDemoCoords = () => {
     setLat(13.0450);
     setLng(80.2450);
     setArea('Central Chennai');
     notify.info('Coordinates set to Chennai Central');
+  };
+
+  const handleAddDepartment = () => {
+    const nextIdx = departments.length + 1;
+    setDepartments((prev) => [
+      ...prev,
+      {
+        id: `dept-${Date.now().toString(36)}`,
+        name: `Specialty Unit ${nextIdx}`,
+        code: `U${nextIdx}`,
+        defaultMin: 15,
+        counters: [
+          { id: `ctr-${Date.now().toString(36)}-1`, name: 'Consultation Desk 1' },
+        ],
+      },
+    ]);
+  };
+
+  const handleAddCounter = (deptIndex) => {
+    setDepartments((prev) => {
+      const copy = [...prev];
+      const dept = { ...copy[deptIndex] };
+      const nextCtr = (dept.counters?.length || 0) + 1;
+      dept.counters = [
+        ...(dept.counters || []),
+        { id: `ctr-${Date.now().toString(36)}-${nextCtr}`, name: `Consultation Desk ${nextCtr}` },
+      ];
+      copy[deptIndex] = dept;
+      return copy;
+    });
+  };
+
+  const handleRemoveDepartment = (deptIndex) => {
+    setDepartments((prev) => prev.filter((_, i) => i !== deptIndex));
   };
 
   const handleSubmit = async (e) => {
@@ -778,31 +892,46 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
 
     setLoading(true);
     try {
+      const payload = {
+        name: name.trim(),
+        lat: Number(lat),
+        lng: Number(lng),
+        area: area.trim(),
+        address: address.trim() || `${area}, Chennai`,
+        hours: hours.trim(),
+        departments: departments.map((d) => ({
+          id: d.id,
+          name: d.name.trim(),
+          code: d.code?.trim().toUpperCase() || d.name?.charAt(0).toUpperCase() || 'G',
+          defaultMin: Number(d.defaultMin) || 12,
+          counters: (d.counters || []).map((c) => ({
+            id: c.id,
+            name: c.name.trim(),
+          })),
+        })),
+        rules: {
+          arriveByMin: Number(arriveByMin),
+          graceMin: Number(graceMin),
+          remoteCap: Number(remoteCap),
+          remoteEnabled: Boolean(remoteEnabled),
+          priorityCreditMin: {
+            senior: Number(seniorCredit),
+            pregnant: Number(pregnantCredit),
+            disabled: Number(disabledCredit),
+            none: 0,
+          },
+        },
+      };
+
       if (existingOrg) {
-        const payload = {
-          name: name.trim(),
-          lat: Number(lat),
-          lng: Number(lng),
-          area: area.trim(),
-          address: address.trim(),
-          defaultMin: Number(defaultMin),
-        };
-        // F-14: only send staffPin when admin explicitly changed it
-        if (pinChanged && staffPin.trim()) {
+        if (staffPin.trim()) {
           payload.staffPin = staffPin.trim();
         }
         await api.updateOrg(existingOrg.id, payload);
         notify.success('Hospital updated successfully');
       } else {
-        await api.createOrg({
-          name: name.trim(),
-          lat: Number(lat),
-          lng: Number(lng),
-          area: area.trim(),
-          address: address.trim() || `${area}, Chennai`,
-          staffPin: staffPin.trim() || '1234',
-          defaultMin: Number(defaultMin),
-        });
+        payload.staffPin = staffPin.trim() || '1234';
+        await api.createOrg(payload);
         notify.success('New hospital created and live on map');
       }
       onSuccess();
@@ -814,39 +943,95 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto no-scrollbar rounded-3xl bg-[var(--surface)] border border-[var(--border)] shadow-2xl p-6 flex flex-col gap-4">
+      <div className="w-full max-w-xl max-h-[90dvh] overflow-y-auto no-scrollbar rounded-3xl bg-[var(--surface)] border border-[var(--border)] shadow-2xl p-6 flex flex-col gap-5">
         <div className="flex items-center justify-between">
           <h3 className="font-heading font-extrabold text-base text-[var(--ink)]">
-            {existingOrg ? 'Edit Facility' : 'Create New Hospital'}
+            {existingOrg ? `Edit ${existingOrg.name}` : 'Create New Hospital Facility'}
           </h3>
           <IconButton icon={<X size={16} />} label="Close" variant="ghost" onClick={onClose} />
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-bold text-[var(--ink)]">Hospital Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Marina Care Clinic"
-              required
-              className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)] font-semibold"
-            />
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* Basic Details */}
+          <div className="flex flex-col gap-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+              General Information
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-[var(--ink)]">Hospital Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Marina Care Clinic"
+                  required
+                  className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)] font-semibold"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-[var(--ink)]">Operating Hours</label>
+                <input
+                  type="text"
+                  value={hours}
+                  onChange={(e) => setHours(e.target.value)}
+                  placeholder="08:00–20:00"
+                  required
+                  className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)]"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-[var(--ink)]">Area / Locality</label>
+                <input
+                  type="text"
+                  value={area}
+                  onChange={(e) => setArea(e.target.value)}
+                  placeholder="e.g. Adyar"
+                  className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)]"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-[var(--ink)]">Staff PIN</label>
+                <input
+                  type="password"
+                  value={staffPin}
+                  onChange={(e) => setStaffPin(e.target.value)}
+                  placeholder={existingOrg ? 'Leave blank to keep current PIN' : '4-digit PIN (default 1234)'}
+                  className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold text-[var(--ink)]"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-bold text-[var(--ink)]">Full Address</label>
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Street address, City, PIN"
+                className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)]"
+              />
+            </div>
           </div>
 
-          <div className="flex flex-col gap-1">
+          {/* Map Location */}
+          <div className="flex flex-col gap-2 pt-2 border-t border-[var(--border)]">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-[var(--ink)] flex items-center gap-1">
                 <MapPin size={13} className="text-[var(--brand)]" />
-                <span>Map Coordinates</span>
+                <span>Map Coordinates & Location Picker</span>
               </label>
               <button
                 type="button"
                 onClick={handleUseDemoCoords}
                 className="text-[11px] font-bold text-[var(--brand)] hover:underline"
               >
-                Use Demo Origin
+                Use Chennai Central
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -856,7 +1041,7 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
                 value={lat}
                 onChange={(e) => setLat(Number(e.target.value))}
                 placeholder="Latitude"
-                className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)] font-bold tnum"
+                className="h-9 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)] font-bold tnum"
               />
               <input
                 type="number"
@@ -864,12 +1049,11 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
                 value={lng}
                 onChange={(e) => setLng(Number(e.target.value))}
                 placeholder="Longitude"
-                className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)] font-bold tnum"
+                className="h-9 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)] font-bold tnum"
               />
             </div>
 
-            {/* Interactive Map Pin Picker (Phase A.1 & A.7 mode="pick") */}
-            <div className="rounded-2xl overflow-hidden border border-[var(--border)] h-40 sm:h-44 relative mt-1.5">
+            <div className="rounded-2xl overflow-hidden border border-[var(--border)] h-36 relative mt-1">
               <MapView
                 mode="pick"
                 center={[Number(lng) || 80.2450, Number(lat) || 13.0450]}
@@ -884,42 +1068,233 @@ function HospitalFormModal({ existingOrg, onClose, onSuccess }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-bold text-[var(--ink)]">Area / Locality</label>
-              <input
-                type="text"
-                value={area}
-                onChange={(e) => setArea(e.target.value)}
-                placeholder="e.g. Adyar"
-                className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs text-[var(--ink)]"
-              />
+          {/* Queue Rules (Appendix A.7) */}
+          <div className="flex flex-col gap-2.5 pt-2 border-t border-[var(--border)]">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+              Queue & Priority Rules
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold text-[var(--ink-faint)]">Arrive By (min)</label>
+                <input
+                  type="number"
+                  min="5"
+                  max="60"
+                  value={arriveByMin}
+                  onChange={(e) => setArriveByMin(Number(e.target.value))}
+                  className="h-9 px-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold tnum text-[var(--ink)]"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold text-[var(--ink-faint)]">Grace (min)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="30"
+                  value={graceMin}
+                  onChange={(e) => setGraceMin(Number(e.target.value))}
+                  className="h-9 px-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold tnum text-[var(--ink)]"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold text-[var(--ink-faint)]">Remote Cap</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={remoteCap}
+                  onChange={(e) => setRemoteCap(Number(e.target.value))}
+                  className="h-9 px-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold tnum text-[var(--ink)]"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1 justify-center">
+                <label className="text-[11px] font-bold text-[var(--ink-faint)]">Remote Join</label>
+                <label className="flex items-center gap-1.5 text-xs font-bold text-[var(--ink)] cursor-pointer mt-1">
+                  <input
+                    type="checkbox"
+                    checked={remoteEnabled}
+                    onChange={(e) => setRemoteEnabled(e.target.checked)}
+                    className="rounded accent-[var(--brand)]"
+                  />
+                  <span>Enabled</span>
+                </label>
+              </div>
             </div>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-bold text-[var(--ink)]">Staff PIN</label>
-              {/* F-14: only show PIN field for create, or if editing and admin chooses to change it */}
-              {!existingOrg || pinChanged ? (
-                <input
-                  type="password"
-                  value={staffPin}
-                  onChange={(e) => setStaffPin(e.target.value)}
-                  placeholder="4-digit PIN"
-                  className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] text-xs font-bold text-[var(--ink)]"
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setPinChanged(true)}
-                  className="h-10 px-3 rounded-xl bg-[var(--surface-2)] border border-dashed border-[var(--border)] text-xs text-[var(--ink-faint)] text-left"
-                >
-                  •••• (click to change PIN)
-                </button>
-              )}
+            {/* Priority Credit Minutes per Claim */}
+            <div className="flex flex-col gap-1.5 pt-1">
+              <span className="text-[11px] font-bold text-[var(--ink-faint)]">Priority Credit (Minutes advanced)</span>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="flex items-center gap-1 bg-[var(--surface-2)] px-2 py-1 rounded-xl border border-[var(--border)]">
+                  <span className="text-[10px] font-bold text-[var(--ink-faint)]">Senior:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={seniorCredit}
+                    onChange={(e) => setSeniorCredit(Number(e.target.value))}
+                    className="w-12 bg-transparent text-xs font-bold text-[var(--ink)] tnum"
+                  />
+                  <span className="text-[10px] text-[var(--ink-faint)]">m</span>
+                </div>
+
+                <div className="flex items-center gap-1 bg-[var(--surface-2)] px-2 py-1 rounded-xl border border-[var(--border)]">
+                  <span className="text-[10px] font-bold text-[var(--ink-faint)]">Pregnant:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={pregnantCredit}
+                    onChange={(e) => setPregnantCredit(Number(e.target.value))}
+                    className="w-12 bg-transparent text-xs font-bold text-[var(--ink)] tnum"
+                  />
+                  <span className="text-[10px] text-[var(--ink-faint)]">m</span>
+                </div>
+
+                <div className="flex items-center gap-1 bg-[var(--surface-2)] px-2 py-1 rounded-xl border border-[var(--border)]">
+                  <span className="text-[10px] font-bold text-[var(--ink-faint)]">Disabled:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={disabledCredit}
+                    onChange={(e) => setDisabledCredit(Number(e.target.value))}
+                    className="w-12 bg-transparent text-xs font-bold text-[var(--ink)] tnum"
+                  />
+                  <span className="text-[10px] text-[var(--ink-faint)]">m</span>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
+          {/* Departments & Counters List */}
+          <div className="flex flex-col gap-2.5 pt-2 border-t border-[var(--border)]">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+                Departments & Desks ({departments.length})
+              </h4>
+              <button
+                type="button"
+                onClick={handleAddDepartment}
+                className="text-[11px] font-bold text-[var(--brand)] hover:underline flex items-center gap-1"
+              >
+                <Plus size={12} /> Add Department
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {departments.map((dept, dIdx) => (
+                <div key={dept.id || dIdx} className="p-3 rounded-2xl bg-[var(--surface-2)] border border-[var(--border)] flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        type="text"
+                        value={dept.name}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setDepartments((prev) => {
+                            const copy = [...prev];
+                            copy[dIdx] = { ...copy[dIdx], name: val };
+                            return copy;
+                          });
+                        }}
+                        placeholder="Department name"
+                        className="h-8 px-2.5 flex-1 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-xs font-bold text-[var(--ink)]"
+                      />
+                      <input
+                        type="text"
+                        value={dept.code}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setDepartments((prev) => {
+                            const copy = [...prev];
+                            copy[dIdx] = { ...copy[dIdx], code: val };
+                            return copy;
+                          });
+                        }}
+                        placeholder="Code (e.g. G)"
+                        className="w-14 h-8 px-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-xs text-center font-bold text-[var(--ink)] uppercase"
+                      />
+                      <div className="flex items-center gap-1 shrink-0">
+                        <input
+                          type="number"
+                          min="3"
+                          max="120"
+                          value={dept.defaultMin}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setDepartments((prev) => {
+                              const copy = [...prev];
+                              copy[dIdx] = { ...copy[dIdx], defaultMin: val };
+                              return copy;
+                            });
+                          }}
+                          className="w-12 h-8 px-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-xs text-center font-bold tnum text-[var(--ink)]"
+                        />
+                        <span className="text-[10px] text-[var(--ink-faint)]">min</span>
+                      </div>
+                    </div>
+
+                    {departments.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDepartment(dIdx)}
+                        className="p-1 text-[var(--danger)] hover:opacity-80"
+                        title="Remove department"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Counters Sublist */}
+                  <div className="flex flex-col gap-1.5 pl-2 border-l-2 border-[var(--border)]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase">
+                        Counters ({dept.counters?.length || 0})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleAddCounter(dIdx)}
+                        className="text-[10px] font-bold text-[var(--brand)] hover:underline"
+                      >
+                        + Add Desk
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {(dept.counters || []).map((ctr, cIdx) => (
+                        <div key={ctr.id || cIdx} className="flex items-center gap-1 bg-[var(--surface)] px-2 py-1 rounded-lg border border-[var(--border)]">
+                          <input
+                            type="text"
+                            value={ctr.name}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setDepartments((prev) => {
+                                const copy = [...prev];
+                                const d = { ...copy[dIdx] };
+                                const ctrs = [...(d.counters || [])];
+                                ctrs[cIdx] = { ...ctrs[cIdx], name: val };
+                                d.counters = ctrs;
+                                copy[dIdx] = d;
+                                return copy;
+                              });
+                            }}
+                            className="bg-transparent text-[11px] font-semibold text-[var(--ink)] w-28"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--border)]">
             <Button size="sm" variant="ghost" type="button" onClick={onClose}>
               Cancel
             </Button>

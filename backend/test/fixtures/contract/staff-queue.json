@@ -1,0 +1,32 @@
+{
+  "counters": [
+    { "id": "c1", "name": "Desk 1", "state": "open", "currentTicketId": "670c5b3e2a1b3c4d5e6f7a8b", "delayUntil": null, "delayReason": null },
+    { "id": "c2", "name": "Desk 2", "state": "open", "currentTicketId": null, "delayUntil": null, "delayReason": null },
+    { "id": "c3", "name": "Desk 3", "state": "paused", "currentTicketId": null, "delayUntil": null, "delayReason": null }
+  ],
+  "activeTicket": {
+    "id": "670c5b3e2a1b3c4d5e6f7a8b",
+    "token": "xK8mP2vL9qR5tY1wZ4aB7c",
+    "label": "G-015",
+    "name": "Ananya Sharma",
+    "phoneMasked": "+91 ••••• ••210",
+    "status": "serving",
+    "startedAt": 1728840300000
+  },
+  "queue": [
+    {
+      "id": "670c5b3e2a1b3c4d5e6f7a8c",
+      "token": "wL9qR5tY1wZ4aB7cxK8mP2",
+      "label": "G-016",
+      "name": "Rajesh Kumar",
+      "phoneMasked": "+91 ••••• ••456",
+      "status": "waiting",
+      "arrived": true,
+      "priority": "senior",
+      "joinedAt": 1728839000000,
+      "lastEta": { "low": 8, "mid": 12, "high": 16, "startMs": 1728841020000 }
+    }
+  ],
+  "skipped": [],
+  "recentCompleted": []
+}

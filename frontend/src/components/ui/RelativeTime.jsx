@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { clock } from '../../lib/clock.js';
 
-export function RelativeTime({ timestamp = Date.now(), className = '' }) {
+export function RelativeTime({ timestamp = clock.now(), className = '' }) {
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -10,7 +11,7 @@ export function RelativeTime({ timestamp = Date.now(), className = '' }) {
     return () => clearInterval(timer);
   }, []);
 
-  const diffSec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  const diffSec = Math.max(0, Math.floor((clock.now() - timestamp) / 1000));
 
   let text = 'Updated just now';
   if (diffSec >= 60 && diffSec < 120) {

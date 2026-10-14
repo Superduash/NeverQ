@@ -81,6 +81,14 @@ export const storage = {
     } catch { /* ignore */ }
   },
 
+  // Preferred travel mode ('car' | 'bike' | 'walk')
+  getTravelMode: () => {
+    try { return localStorage.getItem('nq-travel-mode') || 'car'; } catch { return 'car'; }
+  },
+  setTravelMode: (mode) => {
+    try { localStorage.setItem('nq-travel-mode', mode); } catch { /* ignore */ }
+  },
+
   // User-chosen Home (explicitly saved by the user on this device)
   getSavedHome: () => read(localStorage, 'nq-saved-home'),
   setSavedHome: (home) => write(localStorage, 'nq-saved-home', home),

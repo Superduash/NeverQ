@@ -1,4 +1,5 @@
 services:
+  # Fallback topology: Backend API & WebSockets on Render (Frontend on Vercel)
   - type: web
     name: neverq-backend
     env: node
@@ -10,5 +11,15 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: FRONTEND_URL
-        value: https://never-q.vercel.app
+      - key: SERVE_STATIC
+        value: "false"
+      - key: DEMO_MODE
+        value: "true"
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: MONGODB_URI
+        sync: false

@@ -12,6 +12,7 @@ import { waitStatus } from '../lib/mock.js';
 import { notify } from '../lib/notify.js';
 import { NOTIFICATION_MESSAGES } from '../lib/messages.js';
 import { formatRange, formatDuration, useOnline } from '../lib/utils.js';
+import { clock } from '../lib/clock.js';
 import {
   Button, IconButton, Badge, Segmented, ConfirmDialog,
   Skeleton, EmptyState, RelativeTime
@@ -38,7 +39,7 @@ export default function StaffDashboard() {
   const [targetDelayCounter, setTargetDelayCounter] = useState(null);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [drawerTicket, setDrawerTicket] = useState(null);
-  const [revealedPhoneTicketId, setRevealedPhoneTicketId] = useState(null);
+  const [revealedPhone, setRevealedPhone] = useState(null);
 
   // Confirmation Modals
   const [confirmCloseCounter, setConfirmCloseCounter] = useState(null);
@@ -360,8 +361,8 @@ export default function StaffDashboard() {
               {queueData?.counters?.map((counter) => {
                 const isFocused = counter.id === focusedCounterId;
                 const activeTicket = rawTickets.find((t) => t.id === counter.currentTicketId);
-                const isDelayActive = counter.delayUntil && counter.delayUntil > Date.now();
-                const delayMins = isDelayActive ? Math.ceil((counter.delayUntil - Date.now()) / 60000) : 0;
+                const isDelayActive = counter.delayUntil && counter.delayUntil > clock.now();
+                const delayMins = isDelayActive ? Math.ceil((counter.delayUntil - clock.now()) / 60000) : 0;
 
                 const canCallNext =
                   counter.state === 'open' &&
@@ -632,6 +633,18 @@ export default function StaffDashboard() {
                               </span>
                             )}
 
+                            {ticket.lastEta?.startMs && (
+                              <span className="text-[var(--ink-faint)] font-medium">
+                                · Start ~{new Date(ticket.lastEta.startMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+
+                            {ticket.phoneMasked && (
+                              <span className="text-[var(--ink-faint)] font-mono text-[10px]">
+                                · {ticket.phoneMasked}
+                              </span>
+                            )}
+
                             {isLate && (
                               <span className="text-[var(--danger)] font-bold">
                                 (Late ×{ticket.lateCount})
@@ -674,7 +687,7 @@ export default function StaffDashboard() {
                           variant="ghost"
                           onClick={() => {
                             setDrawerTicket(ticket);
-                            setRevealedPhoneTicketId(null);
+                            setRevealedPhone(null);
                           }}
                         />
 
@@ -757,9 +770,20 @@ export default function StaffDashboard() {
       {drawerTicket && (
         <PatientDetailDrawer
           ticket={drawerTicket}
-          phoneRevealed={revealedPhoneTicketId === drawerTicket.id}
-          onRevealPhone={() => setRevealedPhoneTicketId(drawerTicket.id)}
-          onClose={() => setDrawerTicket(null)}
+          phoneRevealed={Boolean(revealedPhone)}
+          revealedPhone={revealedPhone}
+          onRevealPhone={async () => {
+            try {
+              const res = await api.revealPhone(drawerTicket.id);
+              setRevealedPhone(res?.phone || 'No phone on record');
+            } catch (err) {
+              notify.error('Could not reveal phone number');
+            }
+          }}
+          onClose={() => {
+            setDrawerTicket(null);
+            setRevealedPhone(null);
+          }}
         />
       )}
 
@@ -971,7 +995,7 @@ function PrintSlipModal({ ticket, hospitalName, onClose }) {
             {ticket.name || 'Walk-in Patient'}
           </span>
           <span className="text-[10px] text-[var(--ink-faint)] mt-1">
-            Issued at {new Date(ticket.joinedAt || Date.now()).toLocaleTimeString()}
+            Issued at {new Date(ticket.joinedAt || clock.now()).toLocaleTimeString()}
           </span>
         </div>
 
@@ -1082,12 +1106,26 @@ function DoctorDelayDialog({ counter, onClose, onSuccess }) {
   const [reason, setReason] = useState('Emergency consultation');
   const [loading, setLoading] = useState(false);
 
+  const hasActiveDelay = Boolean(counter?.delayedUntil && counter.delayedUntil > clock.now()) || Boolean(counter?.delayReason);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
       await api.setCounterDelay(counter.id, { minutes, reason: reason.trim() });
       notify.success(`Set ${minutes}m delay for ${counter.name}`);
+      onSuccess();
+    } catch (err) {
+      notify.error(err);
+      setLoading(false);
+    }
+  };
+
+  const handleClearDelay = async () => {
+    setLoading(true);
+    try {
+      await api.setCounterDelay(counter.id, { minutes: 0, reason: '' });
+      notify.info(`Cleared delay for ${counter.name}`);
       onSuccess();
     } catch (err) {
       notify.error(err);
@@ -1104,6 +1142,17 @@ function DoctorDelayDialog({ counter, onClose, onSuccess }) {
           </h3>
           <IconButton icon={<X size={16} />} label="Close" variant="ghost" onClick={onClose} />
         </div>
+
+        {hasActiveDelay && (
+          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex flex-col gap-1.5">
+            <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+              Active Delay: {counter.delayReason || 'Doctor consultation delayed'}
+            </span>
+            <Button size="xs" variant="ghost" className="self-start text-[var(--danger)]" onClick={handleClearDelay} loading={loading}>
+              Clear Delay
+            </Button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
           <div className="flex flex-col gap-1">
@@ -1200,10 +1249,10 @@ function ShortcutHelpDialog({ onClose }) {
 }
 
 // ───────────── Patient Detail Drawer (Phone Masked) ─────────────
-function PatientDetailDrawer({ ticket, phoneRevealed, onRevealPhone, onClose }) {
-  const maskedPhone = ticket.phone
+function PatientDetailDrawer({ ticket, phoneRevealed, revealedPhone, onRevealPhone, onClose }) {
+  const maskedPhone = ticket.phoneMasked || (ticket.phone
     ? ticket.phone.slice(0, 3) + '••••' + ticket.phone.slice(-3)
-    : 'No phone on record';
+    : '••••••••••');
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex justify-end">
@@ -1236,9 +1285,9 @@ function PatientDetailDrawer({ ticket, phoneRevealed, onRevealPhone, onClose }) 
             <span className="text-[10px] uppercase font-bold text-[var(--ink-faint)] block">Contact Phone</span>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-xs font-bold tnum text-[var(--ink)]">
-                {phoneRevealed ? ticket.phone || 'None' : maskedPhone}
+                {phoneRevealed ? revealedPhone : maskedPhone}
               </span>
-              {!phoneRevealed && ticket.phone && (
+              {!phoneRevealed && (
                 <button
                   type="button"
                   onClick={onRevealPhone}
@@ -1260,18 +1309,44 @@ function PatientDetailDrawer({ ticket, phoneRevealed, onRevealPhone, onClose }) 
 
 // ───────────── Phase 7.5: Insights & AI Learning Tab ─────────────
 function InsightsTab({ orgId, department }) {
-  const stats = department?.stats || { n: 12, mean: 12.5, m2: 6.4 };
-  const variance = stats.n > 1 ? stats.m2 / (stats.n - 1) : 4;
-  const stdDev = Math.sqrt(variance);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Predicted vs actual mock rows for completed tickets
-  const completedRows = [
-    { token: 'G-008', est: 12, actual: 11.5, sim: true },
-    { token: 'G-009', est: 14, actual: 16.0, sim: true },
-    { token: 'G-010', est: 10, actual: 9.8, sim: true },
-    { token: 'G-011', est: 15, actual: 14.2, sim: false },
-    { token: 'G-012', est: 11, actual: 13.0, sim: false },
-  ];
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    api.getStaffInsights(department?.id)
+      .then((res) => {
+        if (active) setData(res);
+      })
+      .catch((err) => {
+        console.error('Failed to load insights', err);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [department?.id]);
+
+  if (loading && !data) {
+    return (
+      <div className="flex-1 p-6 max-w-4xl mx-auto w-full flex flex-col gap-6">
+        <Skeleton className="h-12 w-full rounded-2xl" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Skeleton className="h-28 rounded-2xl" />
+          <Skeleton className="h-28 rounded-2xl" />
+          <Skeleton className="h-28 rounded-2xl" />
+        </div>
+        <Skeleton className="h-48 rounded-3xl" />
+      </div>
+    );
+  }
+
+  const stats = data?.stats || { n: 0, mean: department?.defaultMin || 12, sd: 4 };
+  const history = data?.history || [];
+  const rows = data?.rows || [];
+  const hasSimulated = rows.some((r) => r.simulated || r.sim);
+  const n = stats.n || 0;
 
   return (
     <div className="flex-1 overflow-y-auto no-scrollbar p-4 sm:p-6 max-w-4xl mx-auto w-full flex flex-col gap-6">
@@ -1283,7 +1358,7 @@ function InsightsTab({ orgId, department }) {
             AI Wait Engine · Learning Status (K=3 Weighting)
           </span>
         </div>
-        <Badge variant="sim">SIMULATED SESSION</Badge>
+        {hasSimulated && <Badge variant="sim">SIMULATED SESSION</Badge>}
       </div>
 
       {/* Metrics Cards */}
@@ -1291,7 +1366,7 @@ function InsightsTab({ orgId, department }) {
         <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex flex-col">
           <span className="text-[10px] uppercase font-bold text-[var(--ink-faint)]">Baseline Duration</span>
           <span className="font-heading font-black text-2xl text-[var(--ink)] mt-1 tnum">
-            {department?.defaultMin || 12} min
+            {data?.defaultMin ?? department?.defaultMin ?? 12} min
           </span>
           <span className="text-[11px] text-[var(--ink-faint)] mt-1">Configured baseline</span>
         </div>
@@ -1299,20 +1374,20 @@ function InsightsTab({ orgId, department }) {
         <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex flex-col">
           <span className="text-[10px] uppercase font-bold text-[var(--ink-faint)]">Learned Mean (Online)</span>
           <span className="font-heading font-black text-2xl text-[var(--brand)] mt-1 tnum">
-            {stats.mean?.toFixed(1)} min
+            {n > 0 ? `${stats.mean?.toFixed(1)} min` : '—'}
           </span>
           <span className="text-[11px] text-[var(--ink-faint)] mt-1">
-            σ ±{stdDev.toFixed(1)} min variance
+            {n > 0 ? `σ ±${stats.sd?.toFixed(1)} min variance` : 'No samples collected'}
           </span>
         </div>
 
         <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex flex-col">
           <span className="text-[10px] uppercase font-bold text-[var(--ink-faint)]">Sample Size</span>
           <span className="font-heading font-black text-2xl text-[var(--ink)] mt-1 tnum">
-            {stats.n || 0} visits
+            {n} visits
           </span>
-          <span className="text-[11px] text-[var(--wait-good)] font-bold mt-1">
-            High Confidence
+          <span className="text-[11px] text-[var(--wait-good)] font-bold mt-1 capitalize">
+            {data?.confidenceLevel ? `${data.confidenceLevel} Confidence` : 'Initial Baseline'}
           </span>
         </div>
       </div>
@@ -1320,22 +1395,29 @@ function InsightsTab({ orgId, department }) {
       {/* SVG Mini Chart: Learning Distribution */}
       <div className="p-5 rounded-3xl bg-[var(--surface)] border border-[var(--border)] shadow-xs flex flex-col gap-3">
         <h3 className="font-heading font-extrabold text-xs uppercase tracking-wider text-[var(--ink)]">
-          Online Duration Convergence (Plain SVG)
+          Online Duration Convergence ({history.length} samples)
         </h3>
-        <div className="w-full h-32 flex items-end justify-between gap-3 pt-4 px-2">
-          {[14, 13.8, 13.2, 12.9, 12.6, 12.5].map((val, i) => {
-            const h = Math.round((val / 16) * 100);
-            return (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
-                <div
-                  style={{ height: `${h}%` }}
-                  className="w-full rounded-t-lg bg-[var(--brand)]/80 hover:bg-[var(--brand)] transition-all"
-                />
-                <span className="text-[10px] font-bold text-[var(--ink-faint)] tnum">{val}m</span>
-              </div>
-            );
-          })}
-        </div>
+        {history.length === 0 ? (
+          <div className="py-8 text-center text-xs text-[var(--ink-faint)]">
+            No duration history available yet.
+          </div>
+        ) : (
+          <div className="w-full h-32 flex items-end justify-between gap-3 pt-4 px-2">
+            {history.map((val, i) => {
+              const maxVal = Math.max(...history, 16);
+              const h = Math.round((val / maxVal) * 100);
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                  <div
+                    style={{ height: `${Math.max(12, h)}%` }}
+                    className="w-full rounded-t-lg bg-[var(--brand)]/80 hover:bg-[var(--brand)] transition-all"
+                  />
+                  <span className="text-[10px] font-bold text-[var(--ink-faint)] tnum">{val}m</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Predicted vs Actual Table */}
@@ -1344,37 +1426,45 @@ function InsightsTab({ orgId, department }) {
           Predicted vs. Actual Wait Log (Completed)
         </h3>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-[var(--border)] text-[10px] font-bold text-[var(--ink-faint)] uppercase">
-                <th className="py-2">Token</th>
-                <th className="py-2">Predicted Wait</th>
-                <th className="py-2">Actual Wait</th>
-                <th className="py-2">Delta</th>
-                <th className="py-2">Type</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border)]">
-              {completedRows.map((r) => {
-                const delta = (r.actual - r.est).toFixed(1);
-                return (
-                  <tr key={r.token} className="py-2">
-                    <td className="py-2.5 font-bold font-heading">#{r.token}</td>
-                    <td className="py-2.5 tnum">{r.est} min</td>
-                    <td className="py-2.5 tnum">{r.actual} min</td>
-                    <td className={`py-2.5 font-bold tnum ${Number(delta) <= 0 ? 'text-[var(--wait-good)]' : 'text-[var(--wait-mid)]'}`}>
-                      {Number(delta) > 0 ? `+${delta}` : delta}m
-                    </td>
-                    <td className="py-2.5">
-                      {r.sim ? <Badge variant="sim">SIM</Badge> : <Badge variant="default">LIVE</Badge>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        {rows.length === 0 ? (
+          <div className="py-8 text-center text-xs text-[var(--ink-faint)]">
+            No completed visits recorded yet for this session.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-[var(--border)] text-[10px] font-bold text-[var(--ink-faint)] uppercase">
+                  <th className="py-2">Token</th>
+                  <th className="py-2">Predicted Wait</th>
+                  <th className="py-2">Actual Wait</th>
+                  <th className="py-2">Delta</th>
+                  <th className="py-2">Type</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border)]">
+                {rows.map((r, idx) => {
+                  const est = r.predictedMin ?? r.est ?? 12;
+                  const actual = r.actualMin ?? r.actual ?? 12;
+                  const delta = (actual - est).toFixed(1);
+                  return (
+                    <tr key={r.label || r.token || idx} className="py-2">
+                      <td className="py-2.5 font-bold font-heading">#{r.label || r.token}</td>
+                      <td className="py-2.5 tnum">{est} min</td>
+                      <td className="py-2.5 tnum">{actual} min</td>
+                      <td className={`py-2.5 font-bold tnum ${Number(delta) <= 0 ? 'text-[var(--wait-good)]' : 'text-[var(--wait-mid)]'}`}>
+                        {Number(delta) > 0 ? `+${delta}` : delta}m
+                      </td>
+                      <td className="py-2.5">
+                        {r.simulated || r.sim ? <Badge variant="sim">SIM</Badge> : <Badge variant="default">LIVE</Badge>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

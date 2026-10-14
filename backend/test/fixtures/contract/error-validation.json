@@ -1,0 +1,9 @@
+{
+  "status": 400,
+  "code": "VALIDATION_ERROR",
+  "message": "One or more fields are invalid.",
+  "fields": {
+    "phone": "Invalid Indian mobile number format (+91XXXXXXXXXX)"
+  },
+  "requestId": "r-8f3c"
+}
